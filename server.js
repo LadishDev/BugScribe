@@ -12,6 +12,23 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const slowDown = require('express-slow-down');
 const os = require('os');
+const db = require('./lib/db');
+
+
+// Resolve DB provider from env in a forgiving way:
+// - honor explicit DB_PROVIDER
+// - if DATABASE_URL or DB_HOST/DB_USER is present, assume postgres
+// - if DB_DATABASE or SQLITE_PATH is present, assume sqlite
+function resolveDbProvider() {
+  const envProvider = (process.env.DB_PROVIDER || '').toLowerCase();
+  if (envProvider) return envProvider;
+  if (process.env.DATABASE_URL) return 'postgres';
+  if (process.env.DB_HOST || process.env.DB_USER || process.env.DB_PASSWORD) return 'postgres';
+  if (process.env.DB_DATABASE || process.env.SQLITE_PATH) return 'sqlite';
+  // Default to sqlite when nothing explicit is provided
+  return 'sqlite';
+}
+const RESOLVED_DB_PROVIDER = resolveDbProvider();
 
 
 const app = express();
@@ -185,11 +202,24 @@ async function checkIPHistory(req) {
     };
   }
   
-  const historyFile = path.join(__dirname, 'data', 'ip-history.json');
-  
+  // If DB provider is configured, try to use DB-backed IP history
   let history = {};
-  if (await fs.pathExists(historyFile)) {
-    history = await fs.readJson(historyFile);
+  const provider = RESOLVED_DB_PROVIDER;
+  if (provider === 'sqlite' || provider === 'postgres') {
+    try {
+      history = await db.readIPHistory();
+    } catch (e) {
+      // fallback to file if DB read fails
+      const historyFile = path.join(__dirname, 'data', 'ip-history.json');
+      if (await fs.pathExists(historyFile)) {
+        history = await fs.readJson(historyFile);
+      }
+    }
+  } else {
+    const historyFile = path.join(__dirname, 'data', 'ip-history.json');
+    if (await fs.pathExists(historyFile)) {
+      history = await fs.readJson(historyFile);
+    }
   }
   
   const now = Date.now();
@@ -214,12 +244,30 @@ async function checkIPHistory(req) {
   const isSuspicious = recentSubmissions.length >= 3; // Increased from 2 to 3
   
   if (!isSuspicious) {
-  // Add current submission
-  history[clientIP].submissions.push(now);
-  history[clientIP].lastSeen = now;
-  // Save updated history with pretty formatting
-  await fs.ensureDir(path.dirname(historyFile));
-  await fs.writeJson(historyFile, history, { spaces: 2 });
+    // Add current submission
+    history[clientIP].submissions.push(now);
+    history[clientIP].lastSeen = now;
+    // Persist to DB if available, otherwise to file
+  const provider = RESOLVED_DB_PROVIDER;
+    if (provider === 'sqlite' || provider === 'postgres') {
+      try {
+        await db.appendIPHistory(clientIP, {
+          timestamp: now,
+          firstSeen: history[clientIP].firstSeen,
+          lastSeen: history[clientIP].lastSeen,
+          cloudflareCountry: history[clientIP].cloudflareCountry,
+          userAgent: history[clientIP].userAgent
+        });
+      } catch (e) {
+        const historyFile = path.join(__dirname, 'data', 'ip-history.json');
+        await fs.ensureDir(path.dirname(historyFile));
+        await fs.writeJson(historyFile, history, { spaces: 2 });
+      }
+    } else {
+      const historyFile = path.join(__dirname, 'data', 'ip-history.json');
+      await fs.ensureDir(path.dirname(historyFile));
+      await fs.writeJson(historyFile, history, { spaces: 2 });
+    }
   }
 
   // Removed detailed IP history console logging to reduce verbosity
@@ -274,6 +322,12 @@ fs.ensureDirSync(dataDir);
 // Initialize data files
 async function initializeDataFiles() {
   try {
+  const provider = RESOLVED_DB_PROVIDER;
+    // If a DB provider is configured, don't create JSON storage files - DB will be used instead
+    if (provider === 'sqlite' || provider === 'postgres') {
+      console.log(`ℹ️  DB provider set (${provider}) - skipping JSON data file initialization`);
+      return;
+    }
     // Initialize bug reports file
     if (!await fs.pathExists(bugReportsFile)) {
       await fs.writeJson(bugReportsFile, []);
@@ -347,21 +401,28 @@ async function addSuggestion(suggestion) {
 
 // Initialize spam tracking files
 async function initializeSpamFiles() {
+  const provider = RESOLVED_DB_PROVIDER;
+  // If DB provider is set, skip creating JSON spam/bot/ip files
+  if (provider === 'sqlite' || provider === 'postgres') {
+    console.log(`ℹ️  DB provider set (${provider}) - skipping spam/bot/ip JSON file initialization`);
+    return;
+  }
+
   const spamLogFile = path.join(dataDir, 'spam-log.json');
   const botLogFile = path.join(dataDir, 'bot-attempts.json');
   const ipHistoryFile = path.join(dataDir, 'ip-history.json');
-  
+
   // Create empty files if they don't exist
   if (!await fs.pathExists(spamLogFile)) {
     await fs.writeJson(spamLogFile, [], { spaces: 2 });
     console.log('📄 Created spam-log.json');
   }
-  
+
   if (!await fs.pathExists(botLogFile)) {
     await fs.writeJson(botLogFile, [], { spaces: 2 });
     console.log('📄 Created bot-attempts.json');
   }
-  
+
   if (!await fs.pathExists(ipHistoryFile)) {
     await fs.writeJson(ipHistoryFile, {}, { spaces: 2 });
     console.log('📄 Created ip-history.json');
@@ -372,17 +433,253 @@ async function initializeSpamFiles() {
 // Initialize files on startup
 initializeDataFiles();
 initializeSpamFiles();
-
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'screenshot-' + uniqueSuffix + path.extname(file.originalname));
+// Initialize DB (sqlite or postgres) based on DB_PROVIDER environment variable
+// Log resolved DB provider and connection info (mask sensitive fields)
+function getDbInfo() {
+  const provider = RESOLVED_DB_PROVIDER;
+  if (!provider) return { provider: '(none)' };
+  if (provider === 'postgres') {
+    if (process.env.DATABASE_URL) {
+      try {
+        const url = new URL(process.env.DATABASE_URL);
+        // Mask password
+        if (url.password) url.password = '****';
+        return { provider: 'postgres', connection: url.toString() };
+      } catch (e) {
+        return { provider: 'postgres', connection: process.env.DATABASE_URL };
+      }
+    }
+    return {
+      provider: 'postgres',
+      host: process.env.DB_HOST || process.env.DB_HOSTNAME || '127.0.0.1',
+      port: process.env.DB_PORT || 5432,
+      user: process.env.DB_USER || process.env.DB_USERNAME || 'postgres',
+      database: process.env.DB_DATABASE || process.env.PGDATABASE || 'BugScribe'
+    };
   }
-});
+
+  // sqlite
+  if (provider === 'sqlite') {
+    let dbPath = null;
+    if (process.env.DB_DATABASE) {
+      const dbEnv = process.env.DB_DATABASE;
+      dbPath = path.isAbsolute(dbEnv) ? dbEnv : path.join(__dirname, dbEnv);
+    } else if (process.env.SQLITE_PATH) {
+      dbPath = process.env.SQLITE_PATH;
+    } else {
+      dbPath = path.join(__dirname, 'data', 'db.sqlite');
+    }
+    return { provider: 'sqlite', path: dbPath };
+  }
+
+  return { provider };
+}
+
+(async () => {
+  try {
+    // Print resolved DB info
+    try {
+      const info = getDbInfo();
+      if (info.provider === 'postgres') {
+        if (info.connection) console.log(`ℹ️  DB provider=postgres, connection=${info.connection}`);
+        else console.log(`ℹ️  DB provider=postgres, host=${info.host}, port=${info.port}, user=${info.user}, database=${info.database}`);
+      } else if (info.provider === 'sqlite') {
+        console.log(`ℹ️  DB provider=sqlite, path=${info.path}`);
+      } else {
+        console.log(`ℹ️  DB provider=${info.provider}`);
+      }
+    } catch (e) { /* ignore logging errors */ }
+
+    // Subscribe to DB events (if provided) so we can migrate JSON files when DB becomes available
+    if (db && db.events && typeof db.events.on === 'function') {
+      db.events.on('connected', () => {
+        console.log('ℹ️  Database connected event received');
+        migrateJsonFilesToDb().catch(err => console.error('Error migrating JSON to DB after connect:', err));
+      });
+      db.events.on('disconnected', () => {
+        console.warn('⚠️  Database disconnected event received');
+      });
+    }
+
+    const wasConnected = (typeof db.isConnected === 'function') ? await db.isConnected() : false;
+    await db.init();
+    const nowConnected = (typeof db.isConnected === 'function') ? await db.isConnected() : true;
+    if (!wasConnected && nowConnected) {
+      console.log('✅ Database initialized');
+    }
+
+    // If DB is connected now, try a one-time migration from JSON files
+    try {
+      const isConn = typeof db.isConnected === 'function' ? await db.isConnected() : true;
+      if (isConn) {
+        migrateJsonFilesToDb().catch(err => console.error('Error migrating JSON to DB after init:', err));
+      }
+    } catch (e) {
+      // ignore
+    }
+  } catch (err) {
+    console.error('❌ Database initialization failed:', err);
+    // Do not exit - allow JSON fallback if desired. If you want strict DB, uncomment next line.
+    // process.exit(1);
+  }
+})();
+
+// Migrate any existing JSON files into the database. This runs when DB becomes available.
+async function migrateJsonFilesToDb() {
+  const provider = RESOLVED_DB_PROVIDER;
+  if (!(provider === 'sqlite' || provider === 'postgres')) return;
+
+  // Check if any JSON files exist first; if none, be quiet
+  const candidateFiles = [bugReportsFile, suggestionsFile, path.join(__dirname, 'data', 'spam-log.json'), path.join(__dirname, 'data', 'bot-attempts.json'), path.join(__dirname, 'data', 'ip-history.json')];
+  let anyFileExists = false;
+  for (const f of candidateFiles) {
+    if (await fs.pathExists(f)) { anyFileExists = true; break; }
+  }
+  if (!anyFileExists) return; // nothing to do, stay silent
+  console.log('🔁 Attempting to migrate JSON files into the database (if present)');
+  try {
+    // Helper: safely rename file to .migrating, migrate, and only delete on full success.
+    async function migrateFileAtomically(originalPath, migrateHandler) {
+      if (!await fs.pathExists(originalPath)) return { found: false };
+      const migratingPath = originalPath + '.migrating';
+      const timestamp = Date.now();
+      try {
+        // If a leftover .migrating exists from a prior run, move it aside to a .migrating.failed timestamped file
+        if (await fs.pathExists(migratingPath)) {
+          const failedOld = originalPath + `.migrating.failed-${timestamp}`;
+          await fs.move(migratingPath, failedOld, { overwrite: true });
+          console.warn(`Found existing migrating file; moved to ${failedOld} for inspection`);
+        }
+
+        // Move the original file to the migrating path. New writes will recreate the original file.
+        await fs.move(originalPath, migratingPath, { overwrite: false });
+      } catch (moveErr) {
+        console.error(`Failed to move ${originalPath} -> ${migratingPath}:`, moveErr);
+        return { found: true, migrated: false, failures: 1 };
+      }
+
+      // Read and migrate from the migrating file
+      let failures = 0;
+      let processedAny = false;
+      try {
+        const content = await fs.readJson(migratingPath);
+        try {
+          await migrateHandler(content, (err) => { if (err) failures++; processedAny = true; });
+        } catch (handlerErr) {
+          console.error(`Error while migrating ${migratingPath}:`, handlerErr);
+          failures++;
+        }
+      } catch (readErr) {
+        console.error(`Failed to read renamed migrating file ${migratingPath}:`, readErr);
+        failures++;
+      }
+
+      if (failures === 0 && processedAny) {
+        try {
+          await fs.remove(migratingPath);
+          console.log(`✅ Migrated and removed ${path.basename(originalPath)}`);
+        } catch (rmErr) {
+          console.error(`Migration succeeded but failed to remove ${migratingPath}:`, rmErr);
+        }
+        return { found: true, migrated: true, failures: 0 };
+      } else if (failures > 0) {
+        const failedPath = originalPath + `.failed-${timestamp}`;
+        try {
+          await fs.move(migratingPath, failedPath, { overwrite: true });
+          console.error(`⚠️ Migration had ${failures} failures. Preserved file at ${failedPath} for inspection.`);
+        } catch (preserveErr) {
+          console.error(`⚠️ Migration had failures and failed to move ${migratingPath} to ${failedPath}:`, preserveErr);
+        }
+        return { found: true, migrated: false, failures };
+      } else {
+        // No failures but nothing processed (empty file). Remove empty migrating file to avoid noise.
+        try {
+          await fs.remove(migratingPath);
+          console.log(`ℹ️ Removed empty ${path.basename(originalPath)}`);
+        } catch (e) {
+          // ignore
+        }
+        return { found: true, migrated: false, failures: 0 };
+      }
+    }
+
+    // Run migrations and collect whether any completed successfully
+    let migratedAny = false;
+
+    const r1 = await migrateFileAtomically(bugReportsFile, async (bugs, onItemFailure) => {
+      if (Array.isArray(bugs) && bugs.length > 0) {
+        console.log(`🔁 Migrating ${bugs.length} bug reports to DB`);
+        for (const b of bugs) {
+          try { await db.addBugReport(b); } catch (e) { console.error('Error migrating bug report:', e); onItemFailure(e); }
+        }
+      }
+    });
+    if (r1 && r1.migrated) migratedAny = true;
+
+    const r2 = await migrateFileAtomically(suggestionsFile, async (suggestions, onItemFailure) => {
+      if (Array.isArray(suggestions) && suggestions.length > 0) {
+        console.log(`🔁 Migrating ${suggestions.length} suggestions to DB`);
+        for (const s of suggestions) {
+          try { await db.addSuggestion(s); } catch (e) { console.error('Error migrating suggestion:', e); onItemFailure(e); }
+        }
+      }
+    });
+    if (r2 && r2.migrated) migratedAny = true;
+
+    const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
+    const r3 = await migrateFileAtomically(spamLogFile, async (spamLogs, onItemFailure) => {
+      if (Array.isArray(spamLogs) && spamLogs.length > 0) {
+        console.log(`🔁 Migrating ${spamLogs.length} spam logs to DB`);
+        for (const e of spamLogs) {
+          try { await db.appendSpamLog(e); } catch (err) { console.error('Error migrating spam log:', err); onItemFailure(err); }
+        }
+      }
+    });
+    if (r3 && r3.migrated) migratedAny = true;
+
+    const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+    const r4 = await migrateFileAtomically(botLogFile, async (botLogs, onItemFailure) => {
+      if (Array.isArray(botLogs) && botLogs.length > 0) {
+        console.log(`🔁 Migrating ${botLogs.length} bot attempts to DB`);
+        for (const e of botLogs) {
+          try { await db.appendBotAttempt(e); } catch (err) { console.error('Error migrating bot attempt:', err); onItemFailure(err); }
+        }
+      }
+    });
+    if (r4 && r4.migrated) migratedAny = true;
+
+    const ipHistoryFile = path.join(__dirname, 'data', 'ip-history.json');
+    const r5 = await migrateFileAtomically(ipHistoryFile, async (ipHistory, onItemFailure) => {
+      if (ipHistory && typeof ipHistory === 'object' && Object.keys(ipHistory).length > 0) {
+        console.log(`🔁 Migrating IP history (${Object.keys(ipHistory).length} entries) to DB`);
+        for (const [ip, info] of Object.entries(ipHistory)) {
+          try {
+            const submissions = Array.isArray(info.submissions) ? info.submissions : [];
+            for (const t of submissions) {
+              try { await db.appendIPHistory(ip, { timestamp: t, firstSeen: info.firstSeen, lastSeen: info.lastSeen, cloudflareCountry: info.cloudflareCountry, userAgent: info.userAgent }); } catch (inner) { onItemFailure(inner); }
+            }
+          } catch (err) { console.error('Error migrating ip history for', ip, err); onItemFailure(err); }
+        }
+      }
+    });
+    if (r5 && r5.migrated) migratedAny = true;
+
+    if (migratedAny) console.log('🎉 JSON -> DB migration complete');
+  } catch (err) {
+    console.error('Error migrating JSON files to DB:', err);
+  }
+}
+
+    // Multer storage (filename generation) - restored so upload config is correct
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, uploadsDir);
+      },
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'screenshot-' + uniqueSuffix + path.extname(file.originalname));
+      }
+    });
 
 const upload = multer({ 
   storage: storage,
@@ -412,8 +709,7 @@ app.post('/api/bug-reports', ReportLimiter, speedLimiter, upload.single('screens
     if (website && website.trim() !== '') {
       console.log(`🕷️  Bot detected via honeypot from IP: ${clientIP} - filled website field: "${website}"`);
       
-      // Log bot attempt
-      const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+      // Log bot attempt (DB-backed when DB_PROVIDER is set)
       const botLog = {
         timestamp: new Date().toISOString(),
         ip: clientIP,
@@ -423,20 +719,34 @@ app.post('/api/bug-reports', ReportLimiter, speedLimiter, upload.single('screens
         honeypotValue: website,
         type: 'honeypot_triggered'
       };
-      
-      await fs.ensureDir(path.dirname(botLogFile));
-      let botLogs = [];
-      if (await fs.pathExists(botLogFile)) {
-        botLogs = await fs.readJson(botLogFile);
+
+  const provider = RESOLVED_DB_PROVIDER;
+      if (provider === 'sqlite' || provider === 'postgres') {
+        try {
+          await db.appendBotAttempt(botLog);
+        } catch (e) {
+          // Fallback to file if DB append fails
+          const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+          await fs.ensureDir(path.dirname(botLogFile));
+          let botLogs = [];
+          if (await fs.pathExists(botLogFile)) {
+            botLogs = await fs.readJson(botLogFile);
+          }
+          botLogs.push(botLog);
+          if (botLogs.length > 1000) botLogs = botLogs.slice(-1000);
+          await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
+        }
+      } else {
+        const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+        await fs.ensureDir(path.dirname(botLogFile));
+        let botLogs = [];
+        if (await fs.pathExists(botLogFile)) {
+          botLogs = await fs.readJson(botLogFile);
+        }
+        botLogs.push(botLog);
+        if (botLogs.length > 1000) botLogs = botLogs.slice(-1000);
+        await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
       }
-      botLogs.push(botLog);
-      
-      // Keep only last 1000 bot attempts
-      if (botLogs.length > 1000) {
-        botLogs = botLogs.slice(-1000);
-      }
-      
-      await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
       
       // Return success to fool the bot, but don't actually save the report
       return res.status(201).json({ 
@@ -468,8 +778,7 @@ app.post('/api/bug-reports', ReportLimiter, speedLimiter, upload.single('screens
     if (spamCheck.isSpam && spamCheck.confidence > 50) {
       console.log(`🚫 Spam detected from ${clientIP} (${country}): ${spamCheck.issues.join(', ')}`);
       
-      // Log spam attempt
-      const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
+      // Log spam attempt (DB-backed when DB_PROVIDER is set)
       const spamLog = {
         timestamp: new Date().toISOString(),
         ip: clientIP,
@@ -482,20 +791,33 @@ app.post('/api/bug-reports', ReportLimiter, speedLimiter, upload.single('screens
         spamReasons: spamCheck.issues,
         confidence: spamCheck.confidence
       };
-      
-      await fs.ensureDir(path.dirname(spamLogFile));
-      let spamLogs = [];
-      if (await fs.pathExists(spamLogFile)) {
-        spamLogs = await fs.readJson(spamLogFile);
+
+  const provider = RESOLVED_DB_PROVIDER;
+      if (provider === 'sqlite' || provider === 'postgres') {
+        try {
+          await db.appendSpamLog(spamLog);
+        } catch (e) {
+          const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
+          await fs.ensureDir(path.dirname(spamLogFile));
+          let spamLogs = [];
+          if (await fs.pathExists(spamLogFile)) {
+            spamLogs = await fs.readJson(spamLogFile);
+          }
+          spamLogs.push(spamLog);
+          if (spamLogs.length > 1000) spamLogs = spamLogs.slice(-1000);
+          await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
+        }
+      } else {
+        const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
+        await fs.ensureDir(path.dirname(spamLogFile));
+        let spamLogs = [];
+        if (await fs.pathExists(spamLogFile)) {
+          spamLogs = await fs.readJson(spamLogFile);
+        }
+        spamLogs.push(spamLog);
+        if (spamLogs.length > 1000) spamLogs = spamLogs.slice(-1000);
+        await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
       }
-      spamLogs.push(spamLog);
-      
-      // Keep only last 1000 spam logs
-      if (spamLogs.length > 1000) {
-        spamLogs = spamLogs.slice(-1000);
-      }
-      
-      await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
       
       return res.status(400).json({ 
         error: 'Your submission appears to contain spam or inappropriate content.',
@@ -528,9 +850,7 @@ app.post('/api/bug-reports', ReportLimiter, speedLimiter, upload.single('screens
     // Save to JSON file
     await addBugReport(bugReport);
 
-    // Send thank you email
-    // Send Discord/Slack notification (you'll need to configure webhooks)
-    await sendNotification(bugReport);
+  // Send thank you email
 
     console.log(`✅ Bug report submitted: ${bugReport.id} from ${clientIP} (${country}, spam confidence: ${spamCheck.confidence}%)`);
 
@@ -561,8 +881,7 @@ app.post('/api/add-suggestion', ReportLimiter, speedLimiter, upload.none(), asyn
     if (website && website.trim() !== '') {
       console.log(`🕷️  Bot detected via honeypot from IP: ${clientIP} - filled website field: "${website}"`);
       
-      // Log bot attempt
-      const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+      // Log bot attempt (DB-backed when DB_PROVIDER is set)
       const botLog = {
         timestamp: new Date().toISOString(),
         ip: clientIP,
@@ -572,20 +891,33 @@ app.post('/api/add-suggestion', ReportLimiter, speedLimiter, upload.none(), asyn
         honeypotValue: website,
         type: 'honeypot_triggered'
       };
-      
-      await fs.ensureDir(path.dirname(botLogFile));
-      let botLogs = [];
-      if (await fs.pathExists(botLogFile)) {
-        botLogs = await fs.readJson(botLogFile);
+
+  const provider = RESOLVED_DB_PROVIDER;
+      if (provider === 'sqlite' || provider === 'postgres') {
+        try {
+          await db.appendBotAttempt(botLog);
+        } catch (e) {
+          const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+          await fs.ensureDir(path.dirname(botLogFile));
+          let botLogs = [];
+          if (await fs.pathExists(botLogFile)) {
+            botLogs = await fs.readJson(botLogFile);
+          }
+          botLogs.push(botLog);
+          if (botLogs.length > 1000) botLogs = botLogs.slice(-1000);
+          await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
+        }
+      } else {
+        const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+        await fs.ensureDir(path.dirname(botLogFile));
+        let botLogs = [];
+        if (await fs.pathExists(botLogFile)) {
+          botLogs = await fs.readJson(botLogFile);
+        }
+        botLogs.push(botLog);
+        if (botLogs.length > 1000) botLogs = botLogs.slice(-1000);
+        await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
       }
-      botLogs.push(botLog);
-      
-      // Keep only last 1000 bot attempts
-      if (botLogs.length > 1000) {
-        botLogs = botLogs.slice(-1000);
-      }
-      
-      await fs.writeJson(botLogFile, botLogs, { spaces: 2 });
       
       // Return success to fool the bot, but don't actually save the Suggestion
       return res.status(201).json({ 
@@ -632,19 +964,30 @@ app.post('/api/add-suggestion', ReportLimiter, speedLimiter, upload.none(), asyn
         confidence: spamCheck.confidence
       };
       
-      await fs.ensureDir(path.dirname(spamLogFile));
-      let spamLogs = [];
-      if (await fs.pathExists(spamLogFile)) {
-        spamLogs = await fs.readJson(spamLogFile);
+      const provider = (process.env.DB_PROVIDER || '').toLowerCase();
+      if (provider === 'sqlite' || provider === 'postgres') {
+        try {
+          await db.appendSpamLog(spamLog);
+        } catch (e) {
+          await fs.ensureDir(path.dirname(spamLogFile));
+          let spamLogs = [];
+          if (await fs.pathExists(spamLogFile)) {
+            spamLogs = await fs.readJson(spamLogFile);
+          }
+          spamLogs.push(spamLog);
+          if (spamLogs.length > 1000) spamLogs = spamLogs.slice(-1000);
+          await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
+        }
+      } else {
+        await fs.ensureDir(path.dirname(spamLogFile));
+        let spamLogs = [];
+        if (await fs.pathExists(spamLogFile)) {
+          spamLogs = await fs.readJson(spamLogFile);
+        }
+        spamLogs.push(spamLog);
+        if (spamLogs.length > 1000) spamLogs = spamLogs.slice(-1000);
+        await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
       }
-      spamLogs.push(spamLog);
-      
-      // Keep only last 1000 spam logs
-      if (spamLogs.length > 1000) {
-        spamLogs = spamLogs.slice(-1000);
-      }
-      
-      await fs.writeJson(spamLogFile, spamLogs, { spaces: 2 });
       
       return res.status(400).json({ 
         error: 'Your submission appears to contain spam or inappropriate content.',
@@ -676,9 +1019,7 @@ app.post('/api/add-suggestion', ReportLimiter, speedLimiter, upload.none(), asyn
     // Save to JSON file
     await addSuggestion(SuggestionReport);
 
-    // Send thank you email
-    // Send Discord/Slack notification (you'll need to configure webhooks)
-    await sendNotification(SuggestionReport);
+  // Send thank you email
 
     console.log(`✅ Suggestion submitted: ${SuggestionReport.id} from ${clientIP} (${country}, spam confidence: ${spamCheck.confidence}%)`);
 
@@ -1014,64 +1355,70 @@ app.get('/api/admin/screenshots/:filename', authenticateAdmin, (req, res) => {
   }
 });
 
-// Function to send notification to Discord/Slack
-async function sendNotification(bugReport) {
+// Notifications removed by user request - sendNotification intentionally omitted
+
+// Helper functions - delegate to DB layer. The DB layer currently implements
+// read/write/add for bug reports and suggestions for sqlite or postgres.
+async function readBugReports() {
   try {
-    // Discord Webhook example
-    const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-    
-    if (discordWebhookUrl) {
-      const payload = {
-        embeds: [{
-          title: '🐛 New Bug Report',
-          color: 15158332, // Red color
-          fields: [
-            { name: 'Reporter', value: `${bugReport.name} (${bugReport.email})`, inline: true },
-            { name: 'Browser', value: bugReport.browserInfo, inline: true },
-            { name: 'Description', value: bugReport.description.substring(0, 1000) + (bugReport.description.length > 1000 ? '...' : '') },
-            { name: 'Steps to Reproduce', value: bugReport.stepsToReproduce || 'Not provided' },
-            { name: 'Bug ID', value: bugReport.id, inline: true }
-          ],
-          timestamp: bugReport.timestamp,
-          footer: { text: 'FineTrack Bug Report System' }
-        }]
-      };
-      
-      // Use fetch or axios to send to Discord
-      // fetch(discordWebhookUrl, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(payload)
-      // });
-    }
-    
-    // Slack Webhook example
-    const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
-    
-    if (slackWebhookUrl) {
-      const payload = {
-        text: `🐛 New Bug Report from ${bugReport.name}`,
-        attachments: [{
-          color: 'danger',
-          fields: [
-            { title: 'Reporter', value: `${bugReport.name} (${bugReport.email})`, short: true },
-            { title: 'Browser', value: bugReport.browserInfo, short: true },
-            { title: 'Description', value: bugReport.description },
-            { title: 'Bug ID', value: bugReport.id, short: true }
-          ]
-        }]
-      };
-      
-      // Use fetch or axios to send to Slack
-      // fetch(slackWebhookUrl, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(payload)
-      // });
-    }
-    
+    return await db.readBugReports();
   } catch (error) {
-    console.error('Error sending notification:', error);
+    console.error('Error reading bug reports from DB:', error);
+    // Fallback to JSON file if DB fails
+    try { if (await fs.pathExists(bugReportsFile)) return await fs.readJson(bugReportsFile); } catch (e) { /* ignore */ }
+    return [];
+  }
+}
+
+async function writeBugReports(reports) {
+  try {
+    return await db.writeBugReports(reports);
+  } catch (error) {
+    console.error('Error writing bug reports to DB:', error);
+    // Fallback: write JSON file
+    await fs.writeJson(bugReportsFile, reports, { spaces: 2 });
+  }
+}
+
+async function addBugReport(report) {
+  try {
+    return await db.addBugReport(report);
+  } catch (error) {
+    console.error('Error adding bug report to DB:', error);
+    // Fallback: append to JSON
+    const reports = await readBugReports();
+    reports.push(report);
+    await fs.writeJson(bugReportsFile, reports, { spaces: 2 });
+  }
+}
+
+async function readSuggestions() {
+  try {
+    return await db.readSuggestions();
+  } catch (error) {
+    console.error('Error reading suggestions from DB:', error);
+    try { if (await fs.pathExists(suggestionsFile)) return await fs.readJson(suggestionsFile); } catch (e) { /* ignore */ }
+    return [];
+  }
+}
+
+async function writeSuggestions(suggestions) {
+  try {
+    return await db.writeSuggestions(suggestions);
+  } catch (error) {
+    console.error('Error writing suggestions to DB:', error);
+    await fs.writeJson(suggestionsFile, suggestions, { spaces: 2 });
+  }
+}
+
+async function addSuggestion(suggestion) {
+  try {
+    return await db.addSuggestion(suggestion);
+  } catch (error) {
+    console.error('Error adding suggestion to DB:', error);
+    const suggestions = await readSuggestions();
+    suggestions.push(suggestion);
+    await fs.writeJson(suggestionsFile, suggestions, { spaces: 2 });
   }
 }
 
@@ -1080,24 +1427,31 @@ app.get('/api/admin/spam-stats', authenticateAdmin, async (req, res) => {
   try {
     const { search, status, type } = req.query;
     
-    const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
-    const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
-    const ipHistoryFile = path.join(__dirname, 'data', 'ip-history.json');
-    
+  const provider = RESOLVED_DB_PROVIDER;
     let spamAttempts = [];
     let botAttempts = [];
     let ipHistory = {};
-    
-    if (await fs.pathExists(spamLogFile)) {
-      spamAttempts = await fs.readJson(spamLogFile);
-    }
-    
-    if (await fs.pathExists(botLogFile)) {
-      botAttempts = await fs.readJson(botLogFile);
-    }
-    
-    if (await fs.pathExists(ipHistoryFile)) {
-      ipHistory = await fs.readJson(ipHistoryFile);
+
+    if (provider === 'sqlite' || provider === 'postgres') {
+      try { spamAttempts = await db.readSpamLog(); } catch (e) { spamAttempts = []; }
+      try { botAttempts = await db.readBotAttempts(); } catch (e) { botAttempts = []; }
+      try { ipHistory = await db.readIPHistory(); } catch (e) { ipHistory = {}; }
+    } else {
+      const spamLogFile = path.join(__dirname, 'data', 'spam-log.json');
+      const botLogFile = path.join(__dirname, 'data', 'bot-attempts.json');
+      const ipHistoryFile = path.join(__dirname, 'data', 'ip-history.json');
+
+      if (await fs.pathExists(spamLogFile)) {
+        spamAttempts = await fs.readJson(spamLogFile);
+      }
+
+      if (await fs.pathExists(botLogFile)) {
+        botAttempts = await fs.readJson(botLogFile);
+      }
+
+      if (await fs.pathExists(ipHistoryFile)) {
+        ipHistory = await fs.readJson(ipHistoryFile);
+      }
     }
     
     // Get filtered reports for statistical analysis
@@ -1230,52 +1584,67 @@ app.get('/debug/ip', (req, res) => {
 // Get spam files info (admin only)
 app.get('/api/admin/spam-files', authenticateAdmin, async (req, res) => {
   try {
-    const dataDir = path.join(__dirname, 'data');
+  const dataDir = path.join(__dirname, 'data');
+  const provider = RESOLVED_DB_PROVIDER;
+
     const spamLogFile = path.join(dataDir, 'spam-log.json');
     const botLogFile = path.join(dataDir, 'bot-attempts.json');
     const ipHistoryFile = path.join(dataDir, 'ip-history.json');
-    
+
     const files = {
-      spamLog: {
-        path: spamLogFile,
-        exists: await fs.pathExists(spamLogFile),
-        size: 0,
-        count: 0
-      },
-      botAttempts: {
-        path: botLogFile,
-        exists: await fs.pathExists(botLogFile),
-        size: 0,
-        count: 0
-      },
-      ipHistory: {
-        path: ipHistoryFile,
-        exists: await fs.pathExists(ipHistoryFile),
-        size: 0,
-        count: 0
-      }
+      spamLog: { path: spamLogFile, exists: false, size: 0, count: 0 },
+      botAttempts: { path: botLogFile, exists: false, size: 0, count: 0 },
+      ipHistory: { path: ipHistoryFile, exists: false, size: 0, count: 0 }
     };
-    
-    // Get file sizes and counts
-    if (files.spamLog.exists) {
-      const stats = await fs.stat(spamLogFile);
-      const data = await fs.readJson(spamLogFile);
-      files.spamLog.size = stats.size;
-      files.spamLog.count = Array.isArray(data) ? data.length : 0;
-    }
-    
-    if (files.botAttempts.exists) {
-      const stats = await fs.stat(botLogFile);
-      const data = await fs.readJson(botLogFile);
-      files.botAttempts.size = stats.size;
-      files.botAttempts.count = Array.isArray(data) ? data.length : 0;
-    }
-    
-    if (files.ipHistory.exists) {
-      const stats = await fs.stat(ipHistoryFile);
-      const data = await fs.readJson(ipHistoryFile);
-      files.ipHistory.size = stats.size;
-      files.ipHistory.count = typeof data === 'object' ? Object.keys(data).length : 0;
+
+    if (provider === 'sqlite' || provider === 'postgres') {
+      // Report counts from DB
+      try {
+        const spamData = await db.readSpamLog();
+        files.spamLog.path = 'database';
+        files.spamLog.exists = true;
+        files.spamLog.count = Array.isArray(spamData) ? spamData.length : 0;
+      } catch (e) { /* ignore - leave defaults */ }
+
+      try {
+        const botData = await db.readBotAttempts();
+        files.botAttempts.path = 'database';
+        files.botAttempts.exists = true;
+        files.botAttempts.count = Array.isArray(botData) ? botData.length : 0;
+      } catch (e) { /* ignore */ }
+
+      try {
+        const ipData = await db.readIPHistory();
+        files.ipHistory.path = 'database';
+        files.ipHistory.exists = true;
+        files.ipHistory.count = ipData && typeof ipData === 'object' ? Object.keys(ipData).length : 0;
+      } catch (e) { /* ignore */ }
+    } else {
+      // File system based stats
+      files.spamLog.exists = await fs.pathExists(spamLogFile);
+      files.botAttempts.exists = await fs.pathExists(botLogFile);
+      files.ipHistory.exists = await fs.pathExists(ipHistoryFile);
+
+      if (files.spamLog.exists) {
+        const stats = await fs.stat(spamLogFile);
+        const data = await fs.readJson(spamLogFile);
+        files.spamLog.size = stats.size;
+        files.spamLog.count = Array.isArray(data) ? data.length : 0;
+      }
+
+      if (files.botAttempts.exists) {
+        const stats = await fs.stat(botLogFile);
+        const data = await fs.readJson(botLogFile);
+        files.botAttempts.size = stats.size;
+        files.botAttempts.count = Array.isArray(data) ? data.length : 0;
+      }
+
+      if (files.ipHistory.exists) {
+        const stats = await fs.stat(ipHistoryFile);
+        const data = await fs.readJson(ipHistoryFile);
+        files.ipHistory.size = stats.size;
+        files.ipHistory.count = typeof data === 'object' ? Object.keys(data).length : 0;
+      }
     }
     
     res.json({
@@ -1311,6 +1680,36 @@ app.listen(PORT, '0.0.0.0', () => {
   localIPs.forEach(ip => {
     console.log(`  - Network: http://${ip}:${PORT}`);
   });
+});
+
+// Graceful shutdown: checkpoint sqlite WAL and close DB connections, then exit
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}. Closing server and database connections...`);
+  try {
+    // Close DB if implemented
+    if (db && typeof db.close === 'function') {
+      await db.close();
+      console.log('Database connections closed.');
+    }
+  } catch (e) {
+    console.error('Error during DB close:', e);
+  }
+
+  // Allow a short delay for logs to flush
+  setTimeout(() => {
+    console.log('Shutdown complete. Exiting.');
+    process.exit(0);
+  }, 250);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('uncaughtException', err => {
+  console.error('Uncaught exception:', err);
+  gracefulShutdown('uncaughtException');
 });
 
 // Export reports endpoint (admin only)

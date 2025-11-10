@@ -52,6 +52,3 @@ temp/
 
 # Exclude data files
 data/
-
-# Exclude Data Migration file
-migrate-data.js
