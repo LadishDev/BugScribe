@@ -62,15 +62,35 @@ Start the server with:
 npm run dev
 ```
 
-### Creating an Admin User
-Run the following script to create an admin user:
-```sh
-node create-admin.js
+### Support Panel
+Run the following script to add/remove admin users, change passwords, list admins, and simulate posting reports to a running server.
+```sh 
+node ./tools/support-panel.js
 ```
-Follow the prompts to set up admin credentials.
+
+#### Usage
+
+- Interactive mode
+   - node tools/support-panel.js interactive
+
+- Add or update an admin
+   - node tools/support-panel.js add-admin alice S3cret!
+
+- Remove an admin
+   - node tools/support-panel.js remove-admin alice
+
+- List admins
+   - node tools/support-panel.js list-admins
+
+- Change password
+   - node tools/support-panel.js change-password alice NewPass123
+
+- Submit a test bug/suggestion:
+   - node tools/support-panel.js bug --name "Alice" --email "a@ex.com" --description "Found a bug"
+   - node tools/support-panel.js suggestion --random
 
 ## Data Files
-- All user reports, suggestions, and logs are stored in the `data/` directory as JSON files.
+- All user reports, suggestions, and logs are stored on a Postgres Server or in the `data/` directory in a Sqlite file or in JSON files.
 - Uploaded files are stored in the `uploads/` directory.
 
 ## License
