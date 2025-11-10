@@ -21,7 +21,7 @@ BugScribe is a Node.js-based bug reporting and suggestion management system. It 
 
 ## Project Structure
 ```
-support-panel.js               # Script to add/remove, test send reports
+support-panel.js               # Script to add/edit/remove admins, test send reports
 lib/tools/create-admin.js      # Script to create admin users
 index.html                     # Main HTML page
 LICENSE                        # Project license
