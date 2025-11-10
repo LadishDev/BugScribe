@@ -59,7 +59,7 @@ uploads/                       # Uploaded files
 ### Running the Server
 Start the server with:
 ```sh
-npx run dev
+npm run dev
 ```
 
 ### Creating an Admin User
@@ -68,12 +68,6 @@ Run the following script to create an admin user:
 node create-admin.js
 ```
 Follow the prompts to set up admin credentials.
-
-### Migrating Data
-To migrate data, use:
-```sh
-node migrate-data.js
-```
 
 ## Data Files
 - All user reports, suggestions, and logs are stored in the `data/` directory as JSON files.
