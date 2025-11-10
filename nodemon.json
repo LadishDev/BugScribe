@@ -1,0 +1,13 @@
+{
+  "watch": ["server.js", "create-admin.js"],
+  "ignore": [
+    "data/",
+    "uploads/",
+    "node_modules/",
+    "*.log"
+  ],
+  "ext": "js,json",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

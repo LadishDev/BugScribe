@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/public/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Track vehicle fines, charges, MOT, insurance and more in one place" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>BugScribe — Panel</title>
+    <style>
+        :root{
+            --bg: #f6f8fa;
+            --card:#ffffff;
+            --muted:#6b7280;
+            --accent:#0ea5a5;
+            --danger:#ef4444;
+            --success:#10b981;
+            --glass: rgba(255,255,255,0.6);
+            --shadow: 0 6px 20px rgba(16,24,40,0.06);
+            --radius:12px;
+            --max-width:1100px;
+            --input-border: #e6eef0;
+            --card-contrast: #f8fafc; /* used for inner card backgrounds */
+            --item-bg: linear-gradient(180deg,#fff,#fcfdff);
+            --item-border: #f1f5f9;
+            --placeholder: #95a3b8;
+            --text-color: #0f172a;
+            --loader-border-top: var(--accent);
+        }
+        html,body{height:100%;}
+        *{box-sizing:border-box;font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;}
+        body{
+            margin:0;
+            /* use a single solid background color; prevents visual repetition when scrolling */
+            background-color:var(--bg);
+            background-attachment:fixed;
+            background-repeat:no-repeat;
+            color:var(--text-color, #0f172a);
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+            padding:28px 20px;
+        }
+        .wrap{max-width:var(--max-width);margin:0 auto;}
+        header.appbar{
+            display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;
+        }
+        .brand{display:flex;align-items:center;gap:12px}
+          /* Keep logo at fixed size and let the textual area shrink without compressing the logo
+              .brand is a horizontal group: logo (fixed) + text (flexible). This prevents the logo
+              from being squished when the header wraps on smaller viewports. */
+          .brand{flex:0 1 auto}
+          .brand .logo{flex:0 0 auto}
+          .brand > div{flex:1 1 auto;min-width:0}
+          .top-actions{flex:0 0 auto}
+    .logo{width:44px;height:44px;border-radius:10px;background:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .logo img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+    /* fallback content when the image fails to load */
+    .logo-fallback{position:absolute;left:0;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:linear-gradient(135deg,#0ea5a5,#06b6d4);color:white;font-weight:700;border-radius:inherit}
+        h1{font-size:1.15rem;margin:0;color:var(--text-color)}
+        .top-actions{display:flex;align-items:center;gap:10px}
+        .btn{background:var(--accent);color:white;padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+        .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(14,165,165,0.12);flex:unset;width:auto;}
+        .btn.danger{background:var(--danger)}
+
+        /* Replace two-column layout with single-column for admin view */
+        main{display:block;width:100%;max-width:var(--max-width);margin:0 auto}
+        @media (max-width: 980px){main{grid-template-columns:1fr;}}
+
+        .panel{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+        /* Login-specific refinements to match the site's dark theme and feel cohesive */
+        /* Use more of the available horizontal space on large screens but remain responsive.
+         width uses the smaller of 1100px or 92vw so very wide screens still have margins. */
+        #loginForm.panel{width:min(1100px,92vw);max-width:1100px;padding:36px;border-radius:16px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);box-shadow:0 22px 64px rgba(2,6,23,0.7);}    
+        @media (max-width:1399px){ #loginForm.panel{width:min(900px,92vw);max-width:900px;} }
+        @media (max-width:1199px){ #loginForm.panel{width:min(720px,92vw);max-width:720px;} }
+        @media (max-width:899px){ #loginForm.panel{width:92%;max-width:none;padding:24px;} #loginForm .input-field{min-height:48px} }
+        #loginForm h2{margin:0 0 16px;color:var(--text-color);font-size:1.35rem}
+        /* Make inputs full-width and styled for the darker panel with increased height */
+        #loginForm .input-field{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);box-shadow:inset 0 3px 10px rgba(2,6,23,0.28);color:var(--text-color);padding:14px 16px;border-radius:12px;min-height:56px;font-size:1rem}
+        #loginForm .input-field::placeholder{color:var(--placeholder)}
+        /* Password toggle sits inside input, match visual weight */
+        #loginForm .password-toggle{right:12px;width:44px;height:44px;border-radius:10px;background:rgba(14,165,165,0.05);color:var(--accent);box-shadow:none}
+        #loginForm .password-toggle:hover{background:rgba(14,165,165,0.12)}
+        /* Full-width submit button and increased spacing */
+        #loginForm button[type="submit"]{width:100%;padding:14px;border-radius:12px;font-weight:800;background:linear-gradient(90deg,var(--accent),#06b6d4);border:none;color:white;box-shadow:0 12px 30px rgba(6,22,31,0.55)}
+        #loginForm .panel > form > div{gap:18px}
+        .filter-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+        /* input border color is a variable so dark-mode can override it */
+        input[type="text"]{padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:transparent;min-height:44px;flex:1;width:100%}
+        select{padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:var(--card);color:var(--text-color);min-height:44px;flex:unset;width:auto;}
+        /* ensure dropdown options are readable (note: some browsers limit styling of <option>) */
+        select option, .status-select option{background:var(--card);color:var(--text-color)}
+        /* allow the search area to shrink on small viewports (min-width removed) */
+        .search-wrap{position:relative;flex:1;display:flex;min-width:0;align-items:center;max-width:100%}
+        /* ensure the search input uses theme text color and background so typed text is visible in dark mode */
+        /* Search input/button layout: input takes remaining space, button matches input height
+        reserve space for the clear icon so text doesn't underflow */
+        /* merged control: input (left) + button (right) appear as a single connected control */
+        .search-wrap input{color:var(--text-color);background:var(--card);flex:1;border-radius:10px 0 0 10px;border:1px solid var(--input-border);border-right:none;padding:10px 14px;padding-left:20px;padding-right:64px;min-height:44px;direction:ltr;caret-color:var(--text-color)}
+        .search-wrap input::placeholder{color:var(--placeholder)}
+        /* search button spacing and theme-aware icon color */
+        /* button sits flush to the right of the input; remove left border so it looks joined */
+        #searchBtn{margin-left:0;min-width:44px;padding:0 12px;border-radius:0 10px 10px 0;border:1px solid var(--input-border);border-left:none;background:var(--card);color:var(--text-color);display:inline-flex;align-items:center;justify-content:center;height:44px}
+        #searchBtn svg{width:16px;height:16px}
+        /* clear icon should sit inside the input at the right but not overlap the search button */
+        .search-clear{position:absolute;right:52px;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;color:var(--muted);padding:6px;z-index:3;display:inline-flex;align-items:center;justify-content:center}
+
+        /* subtle hover for search button to match input focus visual */
+        #searchBtn:hover{background:rgba(14,165,165,0.02)}
+        #searchBtn:focus{outline:3px solid rgba(14,165,165,0.12);outline-offset:2px}
+        /* theme toggle button visuals */
+        #themeToggle{background:transparent;border:1px solid var(--input-border);color:var(--text-color);padding:8px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;height:44px;margin-left:8px}
+        #themeToggle svg{width:18px;height:18px}
+        .filter-meta{margin-top:10px;color:var(--muted);font-size:0.9rem}
+
+        .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+        .stat-card{padding:14px;border-radius:12px;background:linear-gradient(180deg,var(--card-contrast), var(--card));display:flex;flex-direction:column;gap:6px}
+        .stat-number{font-size:1.5rem;font-weight:700}
+        .stat-label{color:var(--muted);font-size:0.85rem}
+
+        .details{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .stat-list{list-style:none;padding:0;margin:0;max-height:220px;overflow:auto}
+        .stat-list li{display:flex;justify-content:space-between;padding:8px 6px;border-bottom:1px solid var(--item-border)}
+        .no-data{color:var(--muted);text-align:center;padding:20px}
+
+        /* Bug list */
+        #bugReports{display:flex;flex-direction:column;gap:12px}
+        .bug-item{display:flex;flex-direction:column;border-radius:12px;padding:14px;background:var(--item-bg);border:1px solid var(--item-border)}
+        .bug-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+        .status-label{display:inline-block;padding:2px 10px;border-radius:8px;font-size:0.92em;font-weight:600;margin-left:8px;vertical-align:middle}
+        .status-open{background:#f0fdfa;color:#0ea5a5;border:1px solid #99f6e4;}
+        .status-in-progress{background:#fef9c3;color:#b45309;border:1px solid #fde68a;}
+        .status-resolved{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;}
+        .bug-meta{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:0.95rem}
+        .bug-desc{margin-top:10px;color:var(--text-color)}
+        .status-select{padding:8px 10px;border-radius:8px;border:1px solid var(--input-border);background:var(--card);color:var(--text-color)}
+
+        /* small filtered badge */
+        .filtered-badge{display:inline-block;margin-left:10px;background:linear-gradient(90deg,#f97316,#f59e0b);color:white;padding:4px 8px;border-radius:999px;font-weight:700;font-size:0.75rem}
+
+        footer{margin-top:18px;color:var(--muted);text-align:center;font-size:0.9rem;padding-top:1rem;padding-bottom:1rem}
+
+        .loader{width:18px;height:18px;border-radius:50%;border:3px solid rgba(0,0,0,0.08);border-top-color:var(--loader-border-top);animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        /* accessibility */
+        button:focus, input:focus, select:focus{outline:3px solid rgba(14,165,165,0.12);outline-offset:2px}
+
+        /* compact button size for report filter */
+        .btn.small{padding:6px 8px;font-size:0.85rem}
+        /* modern password toggle (inside the login input) */
+        .password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:8px;border:none;background:rgba(14,165,165,0.06);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;transition:background 120ms, transform 120ms}
+        .password-toggle:hover{background:rgba(14,165,165,0.12);transform:translateY(-50%) scale(1.03)}
+        .password-toggle:focus{outline:3px solid rgba(14,165,165,0.12);outline-offset:2px}
+        /* ensure input reserves space for the toggle so layout doesn't shift */
+        .password-input{padding-right:52px;box-sizing:border-box}
+        /* delete button (trash) */
+        .delete-btn{background:transparent;border:none;color:var(--danger);cursor:pointer;padding:6px;border-radius:8px}
+        .delete-btn:hover{background:rgba(239,68,68,0.08)}
+
+        /* confirmation modal */
+        .modal-backdrop{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(2,6,23,0.45);display:none;align-items:center;justify-content:center;z-index:9999}
+        .modal{background:var(--card);padding:18px;border-radius:12px;max-width:480px;width:90%;box-shadow:var(--shadow)}
+        .modal h3{margin:0 0 8px 0}
+        .modal .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+
+        /* modern input style to match the password field when toggled visible */
+        .input-field{width:100%;padding:12px 16px;border-radius:12px;border:1px solid var(--input-border);background:#fff;box-shadow:0 2px 6px rgba(16,24,40,0.03);min-height:48px;font-size:1rem;color:#0f172a;transition:box-shadow 120ms,border-color 120ms}
+        .input-field::placeholder{color:var(--placeholder)}
+        .input-field:focus{border-color:rgba(14,165,165,0.24);box-shadow:0 6px 18px rgba(14,165,165,0.06)}
+        /* when password visibility is enabled, keep the same input visuals */
+        .input-field.visible{color:#0f172a}
+        /* pressed toggle visual to match screenshot */
+        .password-toggle[aria-pressed="true"]{background:rgba(14,165,165,0.12);box-shadow:0 0 0 3px rgba(14,165,165,0.04);color:#059e9e}
+        
+        /* Dark theme overrides */
+        body.dark{
+            --bg: #071025;
+            --card: #071425;
+            --muted: #9aa6b2;
+            --accent: #06b6d4;
+            --danger: #fb7185;
+            --success: #34d399;
+            --glass: rgba(255,255,255,0.03);
+            --shadow: 0 6px 24px rgba(2,6,23,0.7);
+            --radius:12px;
+            --max-width:1100px;
+            --input-border: rgba(255,255,255,0.06);
+            --card-contrast: rgba(255,255,255,0.02);
+            --item-bg: linear-gradient(180deg,#071425,#071025);
+            --item-border: rgba(255,255,255,0.06);
+            --placeholder: #7f8b95;
+            --text-color: #e6eef8;
+            --loader-border-top: rgba(255,255,255,0.12);
+            color: var(--text-color);
+        }
+
+        /* panel and input visual tweaks for dark mode */
+        body.dark .panel{background:linear-gradient(180deg,#071425,#071025);box-shadow:var(--shadow)}
+        body.dark .logo{background:linear-gradient(135deg,#0ea5a5,#06b6d4);}
+        body.dark .input-field{background:transparent;color:var(--text-color)}
+        body.dark input::placeholder, body.dark .input-field::placeholder{color:var(--placeholder)}
+
+          /* Center the login panel vertically within the main area when the login screen is active.
+              This keeps the header (brand/actions) and footer in their original positions while
+              vertically centering only the login box. */
+                 /* Prevent the page from scrolling while login is centered */
+                 body.login-center{overflow:hidden}
+
+                 /* Make the main area a positioned container and center the login form absolutely
+                     This centers the login box in the viewport area more reliably than flex centering
+                     when header/footer/padding are present. */
+                 body.login-center main{min-height:calc(100vh - 56px);position:relative}
+
+
+                     /* Fix the login panel to the viewport center so it's visually centered
+                         regardless of header/footer heights. Keep it above the page but below
+                         any modal backdrops. */
+                     body.login-center #loginForm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:25}
+
+             /* Make the login panel larger when centered and match the panel styles above */
+             /* Ensure the centered fixed panel follows the same responsive limits */
+             body.login-center #loginForm{width:min(1100px,92vw) !important;max-width:1100px !important;padding:36px;box-shadow:0 22px 64px rgba(2,6,23,0.7)}
+             @media (max-width:1399px){ body.login-center #loginForm{width:min(900px,92vw) !important;max-width:900px !important;} }
+             @media (max-width:1199px){ body.login-center #loginForm{width:min(720px,92vw) !important;max-width:720px !important;} }
+             @media (max-width:899px){ body.login-center #loginForm{width:92% !important;max-width:none !important;padding:24px;} }
+
+             /* Keep the footer visible without scrolling by fixing it to the bottom while the
+                 login screen is active. It will overlay slightly above the page edge. */
+             body.login-center footer{position:fixed;left:0;right:0;bottom:18px;text-align:center;z-index:30;background:transparent}
+        
+        /* Responsive layout tweaks for mobile / tablet / desktop */
+        /* Mobile first: make controls stack and reduce paddings */
+        @media (max-width: 599px){
+            body{padding:18px 10px}
+            .wrap{padding:0 6px}
+            header.appbar{flex-direction:row;align-items:center;gap:8px}
+            .brand{gap:8px}
+            .logo{width:40px;height:40px}
+            .top-actions{gap:6px}
+            main{margin-top:8px}
+            .panel{padding:14px}
+            /* Filter row stacks vertically on small screens */
+            .filter-row{flex-direction:column;align-items:stretch}
+            .search-wrap{min-width:0;width:100%;order:0}
+            #searchBtn{height:44px}
+            select#statusFilter, select#sortOrder, #clearBtn{width:100%;min-width:0}
+            .filter-meta{font-size:0.85rem}
+            /* Stats stack vertically */
+            .stats{grid-template-columns:1fr}
+            .details{grid-template-columns:1fr}
+            .stat-list{max-height:160px}
+            /* Bug list items use reduced padding */
+            .bug-item{padding:12px}
+            .bug-desc{font-size:0.95rem}
+            footer{font-size:0.85rem;padding-bottom:0}
+            /* Stack the reports header (title + filters + counts) */
+            .reports-header{flex-direction:column;align-items:stretch;gap:10px}
+            .reports-header > div:last-child{align-self:flex-end}
+            #reportsFilter{margin-left:0;flex-wrap:wrap}
+            #reportsFilter button{margin-bottom:6px}
+            /* Per-report layout: stack info and actions */
+            .bug-top{flex-direction:column;align-items:stretch;gap:8px}
+            .bug-top > div:last-child{display:flex;gap:8px;justify-content:flex-start}
+            .status-select{min-width:120px;max-width:60%}
+            .delete-btn{width:38px;height:38px;padding:6px;display:inline-flex;align-items:center;justify-content:center}
+        }
+
+        /* Very small screens (e.g. 320px wide devices) - further tighten the appbar and stack reports header
+           so it reads: Title -> Counts -> Filters (each on its own row). This prevents overflow and keeps
+           action buttons reachable without requiring horizontal scrolling. */
+        @media (max-width: 360px){
+            header.appbar{flex-wrap:wrap;align-items:center;gap:6px}
+            /* when wrapping, ensure brand text can wrap but not force logo to shrink */
+            .brand{flex:0 1 auto}
+            .brand .logo{flex:0 0 auto}
+            .brand > div{flex:1 1 auto;min-width:0}
+            .brand{gap:6px;min-width:0}
+            /* keep the subtitle but reduce its size so text remains visible on tiny screens */
+            .brand > div{display:block;font-size:0.82rem;color:var(--muted);line-height:1}
+            .logo{width:34px;height:34px}
+            h1{font-size:1rem}
+            .top-actions{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+            .top-actions .btn{padding:6px 8px;font-size:0.82rem}
+            #refreshBtn{padding:6px 8px}
+            #logoutBtn{padding:6px 8px}
+
+            /* Stack the reports header into three rows: title, counts, filters */
+            .reports-header{flex-direction:column;align-items:stretch;gap:8px}
+            .reports-title{order:1}
+            .reports-counts{order:2;display:flex;justify-content:flex-start;gap:8px}
+            .reports-filter{order:3;display:flex;gap:6px;flex-wrap:wrap}
+            .reports-counts{align-items:center}
+            .reports-counts span{font-size:0.95rem}
+            .reports-filter .btn{min-width:0}
+
+            /* Make per-report action controls a bit smaller to avoid forcing horizontal overflow */
+            .status-select{min-width:100px;max-width:55%}
+            .delete-btn{width:36px;height:36px;padding:6px}
+        }
+
+        /* Tablet / small desktop layout */
+        @media (min-width:600px) and (max-width: 899px){
+            body{padding:22px 14px}
+            .wrap{padding:0 8px}
+            header.appbar{align-items:center}
+            .brand{gap:10px}
+            .logo{width:44px;height:44px}
+            .panel{padding:18px}
+            .filter-row{flex-wrap:wrap}
+            .search-wrap{min-width:280px}
+            select#statusFilter, select#sortOrder{min-width:160px}
+            .stats{grid-template-columns:repeat(2,1fr);gap:10px}
+            .details{grid-template-columns:1fr}
+            .stat-list{max-height:200px}
+            .bug-item{padding:12px}
+            footer{font-size:0.9rem}
+            /* Apply tighter appbar and stacked reports-header similar to small screens so logo/text don't get squished */
+            header.appbar{flex-wrap:wrap;gap:8px}
+            .brand{gap:8px;min-width:0}
+            .brand > div{display:block;font-size:0.9rem;color:var(--muted);line-height:1}
+            .logo{width:36px;height:36px}
+            h1{font-size:1rem}
+            .top-actions{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+            .top-actions .btn{padding:6px 8px;font-size:0.9rem}
+
+            /* Stack the reports header into rows when space is limited */
+            .reports-header{flex-direction:column;align-items:stretch;gap:8px}
+            .reports-title{order:1}
+            .reports-counts{order:2;display:flex;justify-content:flex-start;gap:8px}
+            .reports-filter{order:3;display:flex;gap:6px;flex-wrap:wrap}
+            .reports-filter .btn{min-width:0}
+            .status-select{min-width:120px;max-width:55%}
+        }
+
+        /* Wider desktops: keep the roomy layout but ensure content doesn't stretch too wide */
+        @media (min-width:900px){
+            body{padding:28px 20px}
+            .wrap{padding:0}
+            .filter-row{align-items:center}
+            .search-wrap{min-width:360px}
+            .stats{grid-template-columns:repeat(2,1fr);gap:12px}
+            .details{grid-template-columns:repeat(2,1fr)}
+            .bug-item{padding:14px}
+            .panel{padding:20px}
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header class="appbar">
+        <div class="brand">
+            <div class="logo" style="position:relative">
+                <img src="/public/logo.png" alt="BugScribe logo" onerror="this.style.display='none'; this.parentElement.querySelector('.logo-fallback').style.display='flex'" onload="this.parentElement.querySelector('.logo-fallback').style.display='none'" />
+                <div class="logo-fallback">BS</div>
+            </div>
+            <div>
+                <h1>BugScribe Panel</h1>
+                <div style="color:var(--muted);font-size:0.85rem">Manage reports & monitor spam</div>
+            </div>
+        </div>
+        <div class="top-actions">
+            <button id="refreshBtn" class="btn ghost">Refresh</button>
+            <!-- Theme toggle button -->
+            <button id="themeToggle" type="button" class="btn ghost" title="Toggle theme" aria-pressed="false"></button>
+            <button id="logoutBtn" class="btn danger">Logout</button>
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <div id="loginForm" class="panel" style="margin:0 auto;display:none">
+                <h2 style="margin-bottom:12px">Panel Login</h2>
+                <form id="adminLoginForm">
+                    <div style="display:flex;flex-direction:column;gap:18px">
+                        <input id="username" class="input-field" placeholder="Username" required />
+                        <div style="position:relative">
+                            <input id="password" class="password-input input-field" type="password" placeholder="Password" required />
+                            <button id="passwordToggle" type="button" class="password-toggle" aria-label="Toggle password visibility" aria-pressed="false"></button>
+                        </div>
+                        <button type="submit" class="btn">Sign in</button>
+                        <div id="loginError" style="color:var(--danger);display:none"></div>
+                    </div>
+                </form>
+            </div>
+
+            <div id="dashboard" style="display:none">
+                <div class="panel">
+                    <div class="filter-row">
+                        <div class="search-wrap">
+                            <input id="searchInput" name="bs_search" type="text" placeholder="Search by ID, name, email, or description..." aria-label="Search reports" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                            <button id="clearSearch" type="button" class="search-clear" title="Clear" aria-label="Clear search">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                                    <path d="M18 6 L6 18 M6 6 L18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </button>
+                            <button id="searchBtn" type="button" class="btn ghost small" title="Search" aria-label="Search">
+                                <!-- basic search icon: stroke=currentColor so it flips with theme -->
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                                    <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></circle>
+                                    <path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                </svg>
+                            </button>
+                            
+                        </div>
+                        <select id="statusFilter" aria-label="Filter by status">
+                            <option value="all">All</option>
+                            <option value="open">Open</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                        <select id="sortOrder" aria-label="Sort by date">
+                            <option value="newest">Newest first</option>
+                            <option value="oldest">Oldest first</option>
+                        </select>
+                        <button id="clearBtn" class="btn ghost">Clear</button>
+                    </div>
+
+                    <div class="filter-meta">
+                        <span class="filter-count">Showing all 0 reports</span>
+                    </div>
+                </div>
+
+                <div style="height:16px"></div>
+
+                <div class="panel">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <strong>🛡️ Security Overview</strong>
+                            <span id="filteredBadgePlaceholder"></span>
+                        </div>
+                        <div id="statsLoader" style="display:none"><span class="loader"></span></div>
+                    </div>
+
+                    <div style="height:12px"></div>
+
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalSpamAttempts">--</div>
+                            <div class="stat-label">Total Spam Attempts</div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalBotAttempts">--</div>
+                            <div class="stat-label">Total Bot Attempts</div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalTrackedIPs">--</div>
+                            <div class="stat-label">Tracked IP Addresses</div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-number" id="last24HourSpam">--</div>
+                            <div class="stat-label">Spam (Last 24h)</div>
+                        </div>
+
+                    </div>
+
+                    <div class="details">
+                        <div class="panel">
+                            <h3 style="margin:0 0 8px 0">🌍 Top Countries</h3>
+                            <ul id="topCountriesList" class="stat-list"><li class="no-data">No data available</li></ul>
+                        </div>
+                        <div class="panel">
+                            <h3 style="margin:0 0 8px 0">🚫 Common Spam Reasons</h3>
+                            <ul id="spamReasonsList" class="stat-list"><li class="no-data">No data available</li></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="height:12px"></div>
+
+                <div class="panel" style="padding:12px">
+                        <div class="reports-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <div class="reports-title" style="display:flex;gap:8px;align-items:center">
+                                <strong>Bug Reports & Suggestions</strong>
+                            </div>
+                            <div class="reports-counts" style="display:flex;gap:8px;align-items:center">
+                                <span id="bugsCount" style="font-weight:700">0</span>
+                                <span style="color:var(--muted)">bugs</span>
+                                <span style="margin-left:8px;font-weight:700" id="suggestionsCount">0</span>
+                                <span style="color:var(--muted)">suggestions</span>
+                            </div>
+                            <div id="reportsFilter" class="reports-filter" style="display:flex;gap:6px;margin-left:12px">
+                                <button class="btn ghost small" data-filter="all">All</button>
+                                <button class="btn ghost small" data-filter="bugs">Bugs</button>
+                                <button class="btn ghost small" data-filter="suggestions">Suggestions</button>
+                            </div>
+                        </div>
+
+                    <div id="reportsLists">
+                        <div id="bugReportsList"></div>
+                        <div id="suggestionReportsList" style="margin-top:12px"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Export controls (bottom of page) -->
+    <div id="exportWrapper" style="max-width:var(--max-width);margin:18px auto 0;display:none;justify-content:center">
+        <button id="exportBtnBottom" class="btn" title="Export all reports matching current filters">Export matching reports</button>
+    </div>
+
+    <!-- Confirmation modal for deletions (simple confirm/cancel) -->
+    <div id="confirmModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal" role="document">
+            <h3>Confirm delete</h3>
+            <div id="confirmMessage">Are you sure you want to permanently delete this report?</div>
+            <div class="modal-actions">
+                <button id="confirmCancel" class="btn ghost">Cancel</button>
+                <button id="confirmDelete" class="btn danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        BugScribe &copy; <span id="currentYear"></span> | By <a href="https://github.com/LadishDev" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">@LadishDev</a>
+    </footer>
+</div>
+
+<script>
+    // Minimal, clear script preserving functionality
+    let token = localStorage.getItem('adminToken');
+    let allBugs = [];
+    let allSuggestions = [];
+    let searchDebounceTimer = null;
+    // track search/filter interaction: when user types a search, default type filter to 'all' once
+    // until the user manually changes the type filter after typing.
+    let searchHasBeenTyped = false;
+    let userOverrodeFilterAfterSearch = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        bindUI();
+        // initialize password toggle icon without changing layout
+        const t = document.getElementById('passwordToggle'); const p = document.getElementById('password');
+        if(t && p){ setToggleIcon(t, p.type!=='password'); }
+
+        // initialize theme: prefer saved choice, otherwise respect system preference
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+        applyTheme(isDark);
+
+        if (token) showDashboard(); else showLoginIfNeeded();
+    });
+
+    // SVG icons kept small and fixed-size to avoid layout shifts
+    function setToggleIcon(btn, visible){
+        const eye = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+        const eyeOff = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.37 21.37 0 0 1 5.06-6.06"></path><path d="M1 1l22 22"></path></svg>';
+        btn.innerHTML = visible ? eyeOff : eye;
+        btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        // also mark the associated input so styles remain identical when visible
+        try{
+            const input = btn.parentElement && btn.parentElement.querySelector('input');
+            if(input) input.classList.toggle('visible', !!visible);
+        }catch(e){/* ignore */}
+    }
+
+    function bindUI(){
+        document.getElementById('adminLoginForm')?.addEventListener('submit', login);
+        const pwToggle = document.getElementById('passwordToggle');
+        if(pwToggle){
+            // prevent the toggle button from stealing focus (avoid input losing its focused visual)
+            pwToggle.addEventListener('mousedown', function(e){ e.preventDefault(); });
+            pwToggle.addEventListener('click', togglePassword);
+        }
+        document.getElementById('logoutBtn')?.addEventListener('click', logout);
+        document.getElementById('refreshBtn')?.addEventListener('click', () => { loadAllReports(); loadSpamStats(); });
+        document.getElementById('clearBtn')?.addEventListener('click', clearFilters);
+        document.getElementById('clearSearch')?.addEventListener('click', () => { const si = document.getElementById('searchInput'); if(si) si.value=''; searchHasBeenTyped=false; userOverrodeFilterAfterSearch=false; filterBugs(); });
+        const searchInput = document.getElementById('searchInput');
+        if(searchInput){
+            // track whether user has typed into the field, but don't auto-run the search until submit
+            searchInput.addEventListener('input', function(){
+                const v = (this.value||'').trim();
+                if(v) searchHasBeenTyped = true; else { searchHasBeenTyped = false; userOverrodeFilterAfterSearch = false; }
+            });
+            // allow pressing Enter to submit search
+            searchInput.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); submitSearch(); } });
+        }
+
+        // Search submit button
+        document.getElementById('searchBtn')?.addEventListener('click', submitSearch);
+
+        function submitSearch(){
+            // when explicitly submitting a search, force the small reports filter to 'all'
+            const container = document.getElementById('reportsFilter');
+            if(container){ container.querySelectorAll('button').forEach(b=>b.classList.remove('active')); const allBtn = container.querySelector('button[data-filter="all"]'); if(allBtn) allBtn.classList.add('active'); }
+            // reset override flag — user can still change it after submitting
+            userOverrodeFilterAfterSearch = false;
+            searchHasBeenTyped = true;
+            // run filter
+            filterBugs();
+        }
+    // Theme toggle binding
+    const themeBtn = document.getElementById('themeToggle');
+    if(themeBtn){ themeBtn.addEventListener('mousedown', function(e){ e.preventDefault(); }); themeBtn.addEventListener('click', toggleTheme); }
+        document.getElementById('statusFilter')?.addEventListener('change', filterBugs);
+        document.getElementById('exportBtn')?.addEventListener('click', exportReports);
+        document.getElementById('exportBtnBottom')?.addEventListener('click', exportReports);
+        document.getElementById('sortOrder')?.addEventListener('change', filterBugs);
+        // Bind report filter buttons
+        bindReportsFilter();
+        }
+
+    function showLoginIfNeeded(){
+        document.getElementById('loginForm').style.display = 'block';
+        document.getElementById('dashboard').style.display = 'none';
+        const exportWrapper = document.getElementById('exportWrapper'); if(exportWrapper) exportWrapper.style.display = 'none';
+        // hide header actions on login screen
+        const refresh = document.getElementById('refreshBtn'); if(refresh) refresh.style.display = 'none';
+        const logout = document.getElementById('logoutBtn'); if(logout) logout.style.display = 'none';
+        // clear any lingering credentials from the form so logging out doesn't leave them visible
+        try{
+            const u = document.getElementById('username'); if(u) { u.value=''; u.autocomplete='username'; }
+            const p = document.getElementById('password'); if(p) { p.value=''; p.type='password'; p.autocomplete='current-password'; }
+            const pt = document.getElementById('passwordToggle'); if(pt) { setToggleIcon(pt, false); pt.setAttribute('aria-pressed','false'); }
+        }catch(e){/* ignore in non-DOM contexts */}
+        // Add a class to body so CSS can vertically center the login panel
+        try{ document.body.classList.add('login-center'); }catch(e){}
+    }
+
+    function showDashboard(){
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+        loadAllReports(); // Load both bugs and suggestions together
+        loadSpamStats();
+        const exportWrapper = document.getElementById('exportWrapper'); if(exportWrapper) exportWrapper.style.display = 'flex';
+        // restore header actions when dashboard is visible
+        const refresh = document.getElementById('refreshBtn'); if(refresh) refresh.style.display = '';
+        const logout = document.getElementById('logoutBtn'); if(logout) logout.style.display = '';
+        // remove centering class when showing dashboard
+        try{ document.body.classList.remove('login-center'); }catch(e){}
+    }
+
+    async function login(e){
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        const err = document.getElementById('loginError');
+        err.style.display='none'; err.textContent='';
+        if(!username || !password){ err.style.display='block'; err.textContent='Enter username & password'; return; }
+        const btn = e.target.querySelector('button[type="submit"]');
+        const prev = btn.textContent; btn.textContent='Signing in...'; btn.disabled=true;
+        try{
+            const res = await fetch('/api/admin/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+            const data = await res.json();
+            if(res.ok && data.token){ token=data.token; localStorage.setItem('adminToken', token); showDashboard(); }
+            else { err.style.display='block'; err.textContent = data.error || 'Login failed'; }
+        }catch(_){ err.style.display='block'; err.textContent='Network error'; }
+        finally{ btn.textContent=prev; btn.disabled=false; }
+    }
+
+    function togglePassword(){
+        const p = document.getElementById('password');
+        const t = document.getElementById('passwordToggle');
+        if(!p || !t) return;
+        if(p.type==='password'){ p.type='text'; setToggleIcon(t, true); } else { p.type='password'; setToggleIcon(t, false); }
+        // keep focus on the input so styling (box shadow/border) remains consistent
+        try{ p.focus(); }catch(e){}
+    }
+
+    // Theme helpers
+    function setThemeIcon(btn, isDark){
+        // Render a simple SVG icon that inherits color via currentColor.
+        // improved sun/moon icons (stroke-based, slightly heavier) that match the app's icon style
+        const sunSvg = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 1.5v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 20.5v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M4.22 4.22l1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M18.38 18.38l1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.5 12h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M20.5 12h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M4.22 19.78l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M18.38 5.62l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+        const moonSvg = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z" fill="currentColor"/></svg>';
+        // Show sun when in dark mode (indicates switching to light), moon when in light mode
+        btn.innerHTML = isDark ? sunSvg : moonSvg;
+        btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    }
+
+    function applyTheme(isDark){
+        document.body.classList.toggle('dark', !!isDark);
+        const btn = document.getElementById('themeToggle'); if(btn) setThemeIcon(btn, !!isDark);
+    }
+
+    function toggleTheme(){
+        const isNowDark = !document.body.classList.contains('dark');
+        applyTheme(isNowDark);
+        try{ localStorage.setItem('theme', isNowDark ? 'dark' : 'light'); }catch(e){}
+    }
+
+    function logout(){
+        try{ localStorage.removeItem('adminToken'); }catch(e){}
+        token=null;
+        // clear visible fields immediately
+        try{ const u = document.getElementById('username'); if(u) u.value=''; const p = document.getElementById('password'); if(p) p.value=''; }catch(e){}
+        showLoginIfNeeded();
+    }
+
+    // Load all reports (bugs and suggestions) together
+    async function loadAllReports() {
+        try {
+            // Load both bugs and suggestions in parallel
+            const [bugsResponse, suggestionsResponse] = await Promise.all([
+                fetch('/api/admin/bug-reports', { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch('/api/admin/suggestions-reports', { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+
+            // Check for authentication errors
+            if (bugsResponse.status === 401 || suggestionsResponse.status === 401) {
+                logout();
+                return;
+            }
+
+            // Parse responses
+            const bugs = bugsResponse.ok ? await bugsResponse.json() : [];
+            const suggestions = suggestionsResponse.ok ? await suggestionsResponse.json() : [];
+
+            // Mark bugs with type='bug' and suggestions with type='suggestion'
+            const markedBugs = bugs.map(b => ({ ...b, type: 'bug' }));
+            const markedSuggestions = suggestions.map(s => ({ ...s, type: 'suggestion' }));
+
+            // Combine all reports
+            allBugs = [...markedBugs, ...markedSuggestions];
+            allSuggestions = suggestions;
+
+            // Sort combined reports by date (newest first)
+            allBugs.sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.timestamp);
+                const dateB = new Date(b.createdAt || b.timestamp);
+                return dateB - dateA;
+            });
+
+            displayBugs(allBugs);
+            updateFilterCount(allBugs.length, allBugs.length);
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            // Fallback to individual loading
+            await loadBugReports();
+            await loadSuggestions();
+        }
+    }
+
+    // Load all reports
+    async function loadBugReports(){
+        try{
+            const res = await fetch('/api/admin/bug-reports',{headers:{'Authorization':`Bearer ${token}`}});
+            if(res.status===401){ logout(); return; }
+            if(!res.ok) return;
+            const bugs = await res.json();
+            
+            // Mark bugs with type='bug'
+            const markedBugs = bugs.map(b => ({ ...b, type: 'bug' }));
+            
+            // Only update allBugs with bugs (preserve existing suggestions)
+            const existingSuggestions = allBugs.filter(b => b.type === 'suggestion');
+            allBugs = [...markedBugs, ...existingSuggestions];
+            
+            // Sort combined reports by date (newest first)
+            allBugs.sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.timestamp);
+                const dateB = new Date(b.createdAt || b.timestamp);
+                return dateB - dateA;
+            });
+            
+            displayBugs(allBugs);
+            updateFilterCount(allBugs.length, allBugs.length);
+        }catch(_){ /* network issues - silent */ }
+    }
+
+    // Load all Suggestions
+    async function loadSuggestions() {
+        try {
+            const res = await fetch('/api/admin/suggestions-reports', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.status === 401) { logout(); return; }
+            if (!res.ok) return;
+            allSuggestions = await res.json();
+            
+            // Mark suggestions with type='suggestion'
+            const markedSuggestions = allSuggestions.map(s => ({ ...s, type: 'suggestion' }));
+            
+            // Only update allBugs with suggestions (preserve existing bugs)
+            const existingBugs = allBugs.filter(b => b.type === 'bug');
+            allBugs = [...existingBugs, ...markedSuggestions];
+            
+            // Sort combined reports by date (newest first)
+            allBugs.sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.timestamp);
+                const dateB = new Date(b.createdAt || b.timestamp);
+                return dateB - dateA;
+            });
+            
+            displayBugs(allBugs);
+        } catch (error) {
+            console.error('Error loading suggestions:', error);
+        }
+    }
+
+    // Render reports separated into bugs and suggestions. Items with a `type==='suggestion'` are treated as suggestions.
+    function displayBugs(bugs){
+        const bugsContainer = document.getElementById('bugReportsList');
+        const suggestionsContainer = document.getElementById('suggestionReportsList');
+        if(!bugsContainer || !suggestionsContainer) return;
+        // Determine current filter (all/bugs/suggestions)
+        const filterEl = document.querySelector('#reportsFilter button.active');
+        const selectedFilter = filterEl ? filterEl.dataset.filter : 'all';
+
+        // Partition items: heuristics — type==='suggestion' => suggestion; otherwise bug
+        const suggestionItems = bugs.filter(b => b && b.type === 'suggestion');
+        const bugItems = bugs.filter(b => !(b && b.type === 'suggestion'));
+
+        // Helper to create an item DOM element
+        function createItem(bug){
+            const el = document.createElement('div'); el.className='bug-item';
+            const typeLabel = bug.type === 'suggestion' ? '💡 Suggestion' : '🐛 Bug';
+            const typeColor = bug.type === 'suggestion' ? '#10b981' : '#ef4444';
+            const statusClass = bug.status === 'resolved' ? 'status-resolved' : (bug.status === 'in-progress' ? 'status-in-progress' : 'status-open');
+            const statusLabel = bug.status === 'resolved' ? 'Resolved' : (bug.status === 'in-progress' ? 'In Progress' : 'Open');
+            el.innerHTML = `
+                <div class="bug-top">
+                    <div>
+                        <div style="font-weight:700">
+                            #${bug.id} &nbsp; 
+                            <span style="color:${typeColor};font-weight:600;font-size:0.9rem;">${typeLabel}</span> &nbsp;
+                            <span style="color:var(--muted);font-weight:600">${bug.name || 'Unknown'}</span>
+                            <span class="status-label ${statusClass}">${statusLabel}</span>
+                        </div>
+                        <div class="bug-meta">${bug.email || ''} • ${new Date(bug.createdAt||bug.timestamp||Date.now()).toLocaleString()}</div>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <select class="status-select" data-bug-id="${bug.id}">
+                            <option value="open" ${bug.status==='open'?'selected':''}>Open</option>
+                            <option value="in-progress" ${bug.status==='in-progress'?'selected':''}>In Progress</option>
+                            <option value="resolved" ${bug.status==='resolved'?'selected':''}>Resolved</option>
+                        </select>
+                        <button title="Delete report" class="delete-btn" data-bug-id="${bug.id}">🗑️</button>
+                    </div>
+                </div>
+                <div class="bug-desc">${(bug.description||'').replace(/\n/g,'<br>')}</div>
+            `;
+            return el;
+        }
+
+        // Render according to selected filter
+        bugsContainer.innerHTML = '';
+        suggestionsContainer.innerHTML = '';
+
+        if(selectedFilter === 'all'){
+            // For "All" filter, show everything mixed in chronological order in the bugs container
+            if(bugs.length === 0){ 
+                bugsContainer.innerHTML = '<div class="no-data">No reports found.</div>'; 
+            } else {
+                bugs.forEach(item => bugsContainer.appendChild(createItem(item)));
+            }
+        } else if(selectedFilter === 'bugs'){
+            if(bugItems.length===0){ bugsContainer.innerHTML = '<div class="no-data">No bug reports found.</div>'; }
+            else bugItems.forEach(b => bugsContainer.appendChild(createItem(b)));
+        } else if(selectedFilter === 'suggestions'){
+            if(suggestionItems.length===0){ suggestionsContainer.innerHTML = '<div class="no-data">No suggestions found.</div>'; }
+            else suggestionItems.forEach(s => suggestionsContainer.appendChild(createItem(s)));
+        }
+
+        // attach change listeners for status selects in both containers
+        [bugsContainer, suggestionsContainer].forEach(container => {
+            container.querySelectorAll('.status-select').forEach(s => s.addEventListener('change', async function(){
+                await updateStatus(this.dataset.bugId, this.value);
+                filterBugs();
+            }));
+            // attach delete handlers
+            container.querySelectorAll('.delete-btn').forEach(b => b.addEventListener('click', function(){ openConfirmDelete(this.dataset.bugId); }));
+        });
+
+        // update counts
+        document.getElementById('bugsCount').textContent = String(bugItems.length || 0);
+        document.getElementById('suggestionsCount').textContent = String(suggestionItems.length || 0);
+    }
+
+    // Bind the small segmented filter buttons
+    function bindReportsFilter(){
+        const container = document.getElementById('reportsFilter'); if(!container) return;
+        container.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                container.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+                btn.classList.add('active');
+                // if a user clicks to change the filter while a search is active, mark that they overrode the default
+                if(searchHasBeenTyped) userOverrodeFilterAfterSearch = true;
+                // re-run filter flow (which will call displayBugs)
+                filterBugs();
+            });
+        });
+        // default: set 'all' active
+        const def = container.querySelector('button[data-filter="all"]'); if(def) def.classList.add('active');
+    }
+
+    function filterBugs(){
+        const search = (document.getElementById('searchInput')?.value||'').trim().toLowerCase();
+        const status = document.getElementById('statusFilter')?.value || 'all';
+        const sortOrder = document.getElementById('sortOrder')?.value || 'newest';
+        // Get active type filter (all/bugs/suggestions)
+        const activeTypeFilter = document.querySelector('#reportsFilter button.active')?.getAttribute('data-filter') || 'all';
+        let filtered = allBugs.slice();
+        // Filter by status
+        if(status!=='all') filtered = filtered.filter(b=>b.status===status);
+        // Filter by type (based on active tab)
+        if(activeTypeFilter === 'bugs') {
+            filtered = filtered.filter(b => b.type === 'bug');
+        } else if(activeTypeFilter === 'suggestions') {
+            filtered = filtered.filter(b => b.type === 'suggestion');
+        }
+        // Filter by search text. Allow searching by ID with or without a leading '#'.
+        if(search) filtered = filtered.filter(b=>{
+            const text = [bToString(b.id), b.name, b.email, b.description, b.browserInfo, b.stepsToReproduce].join(' ').toLowerCase();
+            const searchNoHash = search.replace(/^#/, '');
+            return text.includes(search) || text.includes(searchNoHash);
+        });
+        // Sort by date
+        filtered.sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.timestamp);
+            const dateB = new Date(b.createdAt || b.timestamp);
+            return sortOrder === 'oldest' ? dateA - dateB : dateB - dateA;
+        });
+        displayBugs(filtered);
+        updateFilterCount(filtered.length, allBugs.length);
+        // stats handling
+        if(!search && (status==='all') && (activeTypeFilter==='all')){ removeFilteredBadge(); loadSpamStats(); }
+        else { computeFilteredStats(filtered); }
+    }
+
+    function bToString(v){ return v===undefined || v===null? '': String(v); }
+
+    function updateFilterCount(filteredCount, totalCount){
+        const el = document.querySelector('.filter-count'); if(!el) return;
+        el.textContent = filteredCount===totalCount ? `Showing all ${totalCount} reports` : `Showing ${filteredCount} of ${totalCount} reports`;
+    }
+
+    function clearFilters(){
+        document.getElementById('searchInput').value='';
+        document.getElementById('statusFilter').value='all';
+        document.getElementById('sortOrder').value='newest';
+        filterBugs();
+    }
+
+    // Compute stats client-side for filtered view
+    function computeFilteredStats(bugs){
+        const stats = { totalSpamAttempts: bugs.length, totalBotAttempts: 0, totalTrackedIPs:0, last24Hours:{spam:0,bots:0}, topCountries:{}, commonSpamReasons:{}, honeypotValues:{}, isFiltered:true };
+        const now = Date.now(); const oneDay = 24*60*60*1000; const ips = new Set();
+        bugs.forEach(b=>{
+            if(b.submitterIP) ips.add(b.submitterIP);
+            const created = new Date(b.createdAt||b.timestamp||0).getTime(); if(created && (now-created)<oneDay) stats.last24Hours.spam++;
+            if(b.country && b.country!=='unknown') stats.topCountries[b.country]=(stats.topCountries[b.country]||0)+1;
+            
+            // Use actual spam check issues instead of email domains
+            if(b.spamCheck && b.spamCheck.issues && Array.isArray(b.spamCheck.issues)) {
+                b.spamCheck.issues.forEach(issue => {
+                    if(issue) stats.commonSpamReasons[issue]=(stats.commonSpamReasons[issue]||0)+1;
+                });
+            }
+            
+            if(b.browserInfo){ const br=b.browserInfo.split(' ')[0]; if(br) stats.honeypotValues[br]=(stats.honeypotValues[br]||0)+1; }
+        });
+        stats.totalTrackedIPs = ips.size;
+        renderStats(stats);
+        showFilteredBadge();
+    }
+
+    // Load stats from server (uses filters when provided)
+    async function loadSpamStats(){
+        const badgePlaceholder = document.getElementById('filteredBadgePlaceholder'); badgePlaceholder.innerHTML='';
+        const loader = document.getElementById('statsLoader'); loader.style.display='inline-block';
+        try{
+            const search = (document.getElementById('searchInput')?.value||'').trim();
+            const status = document.getElementById('statusFilter')?.value || 'all';
+            const activeTypeFilter = document.querySelector('#reportsFilter button.active')?.getAttribute('data-filter') || 'all';
+            
+            const params = new URLSearchParams(); 
+            if(search) params.append('search', search); 
+            if(status && status!=='all') params.append('status', status);
+            if(activeTypeFilter && activeTypeFilter!=='all') params.append('type', activeTypeFilter);
+            
+            const url = `/api/admin/spam-stats${params.toString()?('?'+params.toString()):''}`;
+            const res = await fetch(url, { headers: {'Authorization':`Bearer ${token}`} });
+            if(res.status===401){ logout(); return; }
+            if(!res.ok){ renderErrorStats('Failed to load statistics'); return; }
+            const data = await res.json(); renderStats(data.stats || {});
+            if(data.stats && data.stats.isFiltered) showFilteredBadge(); else removeFilteredBadge();
+        }catch(_){ renderErrorStats('Connection error while loading statistics'); }
+        finally{ loader.style.display='none'; }
+    }
+
+    function renderStats(stats){
+        document.getElementById('totalSpamAttempts').textContent = stats.totalSpamAttempts || 0;
+        document.getElementById('totalBotAttempts').textContent = stats.totalBotAttempts || 0;
+        document.getElementById('totalTrackedIPs').textContent = stats.totalTrackedIPs || 0;
+        document.getElementById('last24HourSpam').textContent = stats.last24Hours?.spam || 0;
+
+        renderList('topCountriesList', stats.topCountries, 'No country data available');
+        renderList('spamReasonsList', stats.commonSpamReasons, 'No spam reasons available');
+    }
+
+    function renderList(id, obj, emptyText){
+        const el = document.getElementById(id); if(!el) return; const entries = Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
+        if(entries.length===0){ el.innerHTML = `<li class='no-data'>${emptyText}</li>`; return; }
+        el.innerHTML = entries.map(([k,v])=>`<li><span>${escapeHtml(k)}</span><span style='font-weight:700'>${v}</span></li>`).join('');
+    }
+
+    function renderErrorStats(msg){ document.getElementById('totalSpamAttempts').textContent='Error'; document.getElementById('topCountriesList').innerHTML=`<li class='no-data'>${msg}</li>`; document.getElementById('spamReasonsList').innerHTML=`<li class='no-data'>${msg}</li>`; }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]); }
+
+    function showFilteredBadge(){ const placeholder = document.getElementById('filteredBadgePlaceholder'); placeholder.innerHTML = '<span class="filtered-badge">FILTERED</span>'; const filterInfo = document.querySelector('.filter-count'); if(filterInfo) filterInfo.textContent = filterInfo.textContent+' — Showing filtered stats'; }
+    function removeFilteredBadge(){ document.getElementById('filteredBadgePlaceholder').innerHTML=''; }
+
+    // Debounce helper
+    function debounce(fn, ms){ clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(fn, ms); }
+
+    // Update status for bugs or suggestions
+    async function updateStatus(id, status) {
+        if (!token) { alert('Session expired — please log in again.'); logout(); return; }
+        try {
+            // Find the item in allBugs to determine if it's a bug or suggestion
+            const item = allBugs.find(b => String(b.id) === String(id));
+            if (!item) {
+                alert('Item not found');
+                return;
+            }
+            
+            const endpoint = item.type === 'suggestion' ? `/api/admin/suggestions-reports/${encodeURIComponent(id)}` : `/api/admin/bug-reports/${encodeURIComponent(id)}`;
+            
+            const res = await fetch(endpoint, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status })
+            });
+            
+            if (res.ok) {
+                // Update local data
+                item.status = status;
+                displayBugs(allBugs);
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to update status');
+            }
+        } catch (error) {
+            console.error('Error updating status:', error);
+            alert('Network error while updating status');
+        }
+    }
+
+    // Delete flow
+    let _deleteTargetId = null;
+    function openConfirmDelete(id){
+        _deleteTargetId = String(id);
+        const modal = document.getElementById('confirmModal');
+        const msg = document.getElementById('confirmMessage');
+        const btnCancel = document.getElementById('confirmCancel');
+        const btnDelete = document.getElementById('confirmDelete');
+        if(!modal || !msg || !btnCancel || !btnDelete) return;
+        msg.textContent = `Are you sure you want to permanently delete report #${id}?`;
+        modal.style.display = 'flex';
+        // enable immediate delete
+        btnDelete.disabled = false;
+        btnCancel.onclick = closeConfirmDelete;
+        btnDelete.onclick = async function(){ await deleteReport(_deleteTargetId); closeConfirmDelete(); };
+    }
+
+    function closeConfirmDelete(){
+        const modal = document.getElementById('confirmModal'); if(!modal) return; modal.style.display='none';
+        const btnDelete = document.getElementById('confirmDelete'); if(btnDelete) btnDelete.onclick = null;
+        const btnCancel = document.getElementById('confirmCancel'); if(btnCancel) btnCancel.onclick = null;
+        _deleteTargetId = null;
+    }
+
+    async function deleteReport(id){
+        if(!token){ alert('Session expired — please log in again.'); logout(); return; }
+        try{
+            // Find the item in allBugs to determine if it's a bug or suggestion
+            const item = allBugs.find(b => String(b.id) === String(id));
+            if (!item) {
+                alert('Item not found');
+                return;
+            }
+            
+            const baseUrl = item.type === 'suggestion' ? '/api/admin/suggestions-reports' : '/api/admin/bug-reports';
+            const url = `${baseUrl}/${encodeURIComponent(id)}`;
+            let res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+
+            // if server responds 404, try alternate common patterns
+            if(res.status === 404){
+                // try query param form
+                const altUrl = `${baseUrl}?id=${encodeURIComponent(id)}`;
+                try{
+                    const altRes = await fetch(altUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    if(altRes.ok){
+                        const idx = allBugs.findIndex(b=>String(b.id)===String(id)); if(idx!==-1) allBugs.splice(idx,1);
+                        filterBugs();
+                        return;
+                    }
+                    // try POST with method override header (some servers require this)
+                    const overrideRes = await fetch(altUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type':'application/json', 'X-HTTP-Method-Override':'DELETE' }, body: JSON.stringify({ id }) });
+                    if(overrideRes.ok){ const idx = allBugs.findIndex(b=>String(b.id)===String(id)); if(idx!==-1) allBugs.splice(idx,1); filterBugs(); return; }
+
+                    // if still not found, refresh list and inform user
+                    await loadAllReports();
+                    alert('Report not found on server (404). It may already have been deleted or the API path is different. Check server logs or verify the report ID.');
+                    return;
+                }catch(err){ console.error('alt delete attempt error', err); alert('Server returned 404 and alternative delete attempts failed. Check server logs.'); return; }
+            }
+
+            if(res.ok){
+                // remove locally and refresh view
+                const idx = allBugs.findIndex(b=>String(b.id)===String(id)); if(idx!==-1) allBugs.splice(idx,1);
+                filterBugs();
+                return;
+            }
+            // try to extract a helpful message from the server
+            let msg = `Failed to delete report (status ${res.status})`;
+            try{
+                const data = await res.json(); if(data && data.error) msg = data.error;
+            }catch(_){
+                // non-json response — try text
+                try{ const text = await res.text(); if(text) msg = text; }catch(_){ }
+            }
+            alert(msg);
+        }catch(err){
+            console.error('deleteReport error', err);
+            alert('Network error while attempting to delete report');
+        }
+    }
+
+    // Export now builds a CSV client-side from the currently loaded reports and respects current filters.
+    // If no data is loaded client-side, falls back to server export with exportAll=1.
+    function exportReports(){
+        // gather filters
+        const search = (document.getElementById('searchInput')?.value||'').trim().toLowerCase();
+        const status = document.getElementById('statusFilter')?.value || 'all';
+        const filterEl = document.querySelector('#reportsFilter button.active');
+        const type = filterEl ? filterEl.dataset.filter : 'all';
+
+        // if we have client-side data, filter it and build CSV
+        if(Array.isArray(allBugs) && allBugs.length>0){
+            let items = allBugs.slice();
+            if(status!=='all') items = items.filter(b=>b.status===status);
+            if(search) items = items.filter(b=>{
+                const text = [bToString(b.id), b.name, b.email, b.description, b.browserInfo, b.stepsToReproduce].join(' ').toLowerCase();
+                return text.includes(search);
+            });
+            if(type==='bugs') items = items.filter(b=>!(b && b.type==='suggestion'));
+            if(type==='suggestions') items = items.filter(b=>b && b.type==='suggestion');
+
+            if(items.length===0){ alert('No reports match the current filters to export.'); return; }
+
+            // build CSV
+            const headers = ['id','type','name','email','status','createdAt','country','submitterIP','browserInfo','description'];
+            const rows = items.map(b => [
+                bToString(b.id),
+                bToString(b.type || 'bug'),
+                bToString(b.name),
+                bToString(b.email),
+                bToString(b.status),
+                bToString(b.createdAt || b.timestamp),
+                bToString(b.country),
+                bToString(b.submitterIP),
+                bToString(b.browserInfo),
+                bToString(b.description).replace(/\r?\n/g,' ')
+            ]);
+
+            function csvEscape(field){
+                if(field==null) return '';
+                const s = String(field).replace(/"/g,'""');
+                return '"'+s+'"';
+            }
+
+            const csv = [headers.map(csvEscape).join(',')].concat(rows.map(r=>r.map(csvEscape).join(','))).join('\n');
+            const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const d = new Date().toISOString().slice(0,10);
+            a.href = url; a.download = `fine-track-reports-${d}.csv`; document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            return;
+        }
+
+        // fallback: request server to export all matching results
+        const params = new URLSearchParams(); if(search) params.append('search', search); if(status && status!=='all') params.append('status', status);
+        if(type && (type==='bugs' || type==='suggestions')) params.append('type', type);
+        params.append('exportAll','1'); params.append('token', token || '');
+        location.href = '/api/admin/export' + (params.toString() ? ('?' + params.toString()) : '');
+    }
+
+    // Remove global noisy logging; keep a minimal global error handler for UX only
+    window.addEventListener('error', function(e){
+        // silently capture errors for now; can be wired to a remote error tracker
+    });
+
+    // Footer year update
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+</script>
+</body>
+</html>
