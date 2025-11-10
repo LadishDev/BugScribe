@@ -2,7 +2,7 @@
 
 <p align="center">
     <img 
-        src="./public/logo_image_text.png" 
+        src="./public/repo_logo_image_text.png" 
         alt="BugScribe Logo"
         width="500"
         height="300"
