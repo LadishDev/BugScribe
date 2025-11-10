@@ -1073,12 +1073,12 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Username and password are required' });
     }
     
-    // Load admin credentials from single file
-    const adminFile = path.join(__dirname, 'admin-credentials.json');
+  // Load admin credentials from data/ directory
+  const adminFile = path.join(__dirname, 'data', 'admin-credentials.json');
     
     if (!await fs.pathExists(adminFile)) {
       console.log(`   ❌ Admin credentials file not found from ${realIP}`);
-      return res.status(401).json({ error: 'No admin accounts configured. Run create-admin.js first.' });
+      return res.status(401).json({ error: 'No admin accounts configured. Run node lib/tools/create-admin.js or run support-panel.js add-admin to create one. The admin credentials file should be at data/admin-credentials.json.' });
     }
     
     const adminCredentials = await fs.readJson(adminFile);
@@ -1151,8 +1151,8 @@ const authenticateAdmin = async (req, res, next) => {
   try {
   const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Verify admin still exists and hasn't been disabled
-    const adminFile = path.join(__dirname, 'admin-credentials.json');
+  // Verify admin still exists and hasn't been disabled (moved to data/)
+  const adminFile = path.join(__dirname, 'data', 'admin-credentials.json');
     if (!await fs.pathExists(adminFile)) {
       return res.status(401).json({ error: 'Admin credentials file no longer exists.' });
     }
