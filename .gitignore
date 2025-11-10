@@ -11,8 +11,6 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Admin credentials (NEVER COMMIT THESE)
-admin-credentials.json
 
 # Uploaded files
 uploads/

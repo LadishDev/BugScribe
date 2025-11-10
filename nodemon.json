@@ -1,5 +1,5 @@
 {
-  "watch": ["server.js", "create-admin.js"],
+  "watch": ["server.js", "lib/tools/create-admin.js"],
   "ignore": [
     "data/",
     "uploads/",

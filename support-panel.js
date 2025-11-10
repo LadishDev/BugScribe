@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
-  support-panel.js
+  support-panel.js (moved to repo root)
   Terminal utility to manage admin users and simulate reports for BugScribe.
 
   Commands:
@@ -12,11 +12,6 @@
   node support-panel.js bug           # POST test bug report
   node support-panel.js suggestion    # POST test suggestion report
 
-  Notes:
-  - The script edits `admin-credentials.json` in the repository root (it will create a backup before editing).
-  - Uses bcryptjs for hashing (same as existing scripts).
-  - Uses built-in fetch when available; falls back to node-fetch if needed.
-
 */
 
 const fs = require('fs-extra');
@@ -24,7 +19,8 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-const ADMIN_FILE = path.join(__dirname, '..', 'admin-credentials.json');
+// Admin credentials now live in the data/ directory
+const ADMIN_FILE = path.join(__dirname, 'data', 'admin-credentials.json');
 
 async function loadCredentials() {
   if (await fs.pathExists(ADMIN_FILE)) {
@@ -107,9 +103,8 @@ async function changePassword(username, newPassword) {
   console.log(`Password changed for '${username}'`);
 }
 
-// Reusable helper copied from tools/test-submit.js to post JSON with a robust fetch check and response parsing
+// Reusable helper to POST JSON
 async function postJson(url, body) {
-  // prefer global fetch (Node 18+). If unavailable, instruct the user to run with Node 18+ or install node-fetch.
   if (typeof fetch === 'undefined') {
     throw new Error('fetch is not available in this Node runtime. Please run with Node 18+ or install node-fetch.');
   }
@@ -125,7 +120,6 @@ async function postJson(url, body) {
   return { status: res.status, ok: res.ok, body: parsed };
 }
 
-// ---- Helpers copied from tools/test-submit.js to support `bug` / `suggestion` commands ----
 function parseArgs(args) {
   const out = { flags: {} };
   const rest = [];
@@ -162,9 +156,6 @@ function samplePayload(type) {
 }
 
 const BASE_URL = (process.env.BASE_URL) || `http://localhost:${process.env.PORT || 3001}`;
-// ---- end helpers ----
-
-// NOTE: `simulate-report` command/function removed — use the `bug` or `suggestion` commands
 
 function printHelp() {
   console.log('\nsupport-panel - admin/report helper for BugScribe\n');

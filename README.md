@@ -21,8 +21,8 @@ BugScribe is a Node.js-based bug reporting and suggestion management system. It 
 
 ## Project Structure
 ```
-admin-credentials.json         # Admin credentials storage
-create-admin.js                # Script to create admin users
+support-panel.js               # Script to add/remove, test send reports
+lib/tools/create-admin.js      # Script to create admin users
 index.html                     # Main HTML page
 LICENSE                        # Project license
 migrate-data.js                # Data migration script
@@ -65,29 +65,29 @@ npm run dev
 ### Support Panel
 Run the following script to add/remove admin users, change passwords, list admins, and simulate posting reports to a running server.
 ```sh 
-node ./tools/support-panel.js
+node ./support-panel.js
 ```
 
 #### Usage
 
 - Interactive mode
-   - node tools/support-panel.js interactive
+   - node support-panel.js interactive
 
 - Add or update an admin
-   - node tools/support-panel.js add-admin alice S3cret!
+   - node support-panel.js add-admin alice S3cret!
 
 - Remove an admin
-   - node tools/support-panel.js remove-admin alice
+   - node support-panel.js remove-admin alice
 
 - List admins
-   - node tools/support-panel.js list-admins
+   - node support-panel.js list-admins
 
 - Change password
-   - node tools/support-panel.js change-password alice NewPass123
+   - node support-panel.js change-password alice NewPass123
 
 - Submit a test bug/suggestion:
-   - node tools/support-panel.js bug --name "Alice" --email "a@ex.com" --description "Found a bug"
-   - node tools/support-panel.js suggestion --random
+   - node support-panel.js bug --name "Alice" --email "a@ex.com" --description "Found a bug"
+   - node support-panel.js suggestion --random
 
 ## Data Files
 - All user reports, suggestions, and logs are stored on a Postgres Server or in the `data/` directory in a Sqlite file or in JSON files.
