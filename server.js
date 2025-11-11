@@ -1662,7 +1662,9 @@ app.get('/api/admin/spam-files', authenticateAdmin, async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+let server;
+
+server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Bug report server running on port ${PORT}`);
   console.log(`BugScribe panel available at:`);
   const interfaces = os.networkInterfaces();
@@ -1682,23 +1684,55 @@ app.listen(PORT, '0.0.0.0', () => {
   });
 });
 
-// Graceful shutdown: checkpoint sqlite WAL and close DB connections, then exit
+// Graceful shutdown: close DB connections early, then stop HTTP server, then exit
 let shuttingDown = false;
 async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`Received ${signal}. Closing server and database connections...`);
+
+  // First: attempt to close Postgres directly (if using Postgres) so the DB module
+  // doesn't try reconnecting while we're shutting down. Fall back to generic db.close().
   try {
-    // Close DB if implemented
+    if (RESOLVED_DB_PROVIDER === 'postgres') {
+      try {
+        const pgDirect = require('./lib/db/postgres');
+        if (pgDirect && typeof pgDirect.close === 'function') {
+          console.log('Closing Postgres connection (direct) before shutting down HTTP server...');
+          await pgDirect.close();
+          console.log('Postgres direct close complete.');
+        }
+      } catch (e) {
+        console.error('Error closing Postgres directly:', e);
+        // Fallback to generic DB close below
+      }
+    }
+
+    // Generic DB close (for sqlite or if postgres direct close failed)
     if (db && typeof db.close === 'function') {
-      await db.close();
-      console.log('Database connections closed.');
+      try {
+        await db.close();
+        console.log('Database connections closed.');
+      } catch (e) {
+        console.error('Error during DB close:', e);
+      }
     }
   } catch (e) {
-    console.error('Error during DB close:', e);
+    console.error('Unexpected error while closing DB:', e);
   }
 
-  // Allow a short delay for logs to flush
+  // Then: stop accepting new HTTP connections and wait for existing to finish
+  try {
+    if (server && typeof server.close === 'function') {
+      console.log('Stopping HTTP server...');
+      await new Promise((resolve) => server.close(() => resolve()));
+      console.log('HTTP server stopped.');
+    }
+  } catch (e) {
+    console.error('Error closing HTTP server:', e);
+  }
+
+  // Allow a short delay for logs to flush, then exit
   setTimeout(() => {
     console.log('Shutdown complete. Exiting.');
     process.exit(0);
